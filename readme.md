@@ -1,3 +1,5 @@
+# Subscribe to my free daily newsletter for insightful SPX 0dte trading statistics and timely entry recommendations. Sign up here: https://beta.breyer.eu/
+
 # Trading Analysis Python Program
 
 This is a Python program that uses the Pandas, Matplotlib and Seaborn libraries to analyze a CSV file containing trading data. The goal of the program is to analyze trading profits based on the time and day of trade entry, and visualize the data in a heatmap. 
