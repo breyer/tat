@@ -13,11 +13,11 @@ The script is calibrated for use with trade templates named in a specific format
 
 The script employs a meticulous approach to identify trading templates, hinging on their adherence to a predefined naming convention:
 
-1.  **Naming Convention**: Template names combine the trade type with a specific time, following the `[TRADE TYPE] ([TIME])` format, e.g., "PUT SPREAD (9:33)" or "CALL SPREAD (10:00)".
+1.  **Naming Convention**: Template names combine the trade type with a specific time, following the `[TRADE TYPE] ([TIME])` format, e.g., "PUT SPREAD (09:33)" or "CALL SPREAD (10:00)".
     
 2.  **Trade Type**: This indicates the nature of the trade, such as "PUT SPREAD" or "CALL SPREAD", differentiating between put option spreads and call option spreads.
     
-3.  **Time Component**: The time, enclosed in parentheses, is crucial for matching the trade strategy or timing, e.g., "9:33", "10:00".
+3.  **Time Component**: The time, enclosed in parentheses, is crucial for matching the trade strategy or timing, e.g., "09:33", "10:00".
     
 4.  **Script's Matching Process**:
     
