@@ -40,6 +40,7 @@ for index, row in data.iterrows():
     premium = row['Premium']
     spread = row['Spread']
     stop = row['Stop']
+    strategy = row['Strategy']
 
     # Update for PUT SPREAD
     cursor = conn.execute(f"""
@@ -48,7 +49,8 @@ for index, row in data.iterrows():
         WHERE Name = 'PUT SPREAD ({hour_minute})'
         RETURNING TradeTemplateID
     """)
-    updated_ids.extend([id[0] for id in cursor.fetchall()])
+    put_ids = [id[0] for id in cursor.fetchall()]
+    updated_ids.extend(put_ids)
 
     # Update for CALL SPREAD
     cursor = conn.execute(f"""
@@ -57,7 +59,25 @@ for index, row in data.iterrows():
         WHERE Name = 'CALL SPREAD ({hour_minute})'
         RETURNING TradeTemplateID
     """)
-    updated_ids.extend([id[0] for id in cursor.fetchall()])
+    call_ids = [id[0] for id in cursor.fetchall()]
+    updated_ids.extend(call_ids)
+
+    # Update Conditions in ScheduleMaster
+    for trade_template_id in put_ids:
+        if strategy == 'EMA520':
+            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 > EMA20' WHERE TradeTemplateID = {trade_template_id}")
+        elif strategy == 'EMA540':
+            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 > EMA40' WHERE TradeTemplateID = {trade_template_id}")
+        elif strategy == 'EMA2040':
+            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA20 > EMA40' WHERE TradeTemplateID = {trade_template_id}")
+
+    for trade_template_id in call_ids:
+        if strategy == 'EMA520':
+            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 < EMA20' WHERE TradeTemplateID = {trade_template_id}")
+        elif strategy == 'EMA540':
+            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 < EMA40' WHERE TradeTemplateID = {trade_template_id}")
+        elif strategy == 'EMA2040':
+            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA20 < EMA40' WHERE TradeTemplateID = {trade_template_id}")
 
 # Set IsActive to 0 in the ScheduleMaster table
 conn.execute("UPDATE ScheduleMaster SET IsActive = 0")
