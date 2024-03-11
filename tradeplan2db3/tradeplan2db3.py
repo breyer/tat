@@ -55,7 +55,7 @@ for index, row in data.iterrows():
     # Update for CALL SPREAD
     cursor = conn.execute(f"""
         UPDATE TradeTemplate
-        SET TargetMax = {premium}, StopMultiple = '{stop}', LongWidth = {spread}
+        SET TargetMaxCall = {premium}, StopMultiple = '{stop}', LongWidth = {spread}
         WHERE Name = 'CALL SPREAD ({hour_minute})'
         RETURNING TradeTemplateID
     """)
