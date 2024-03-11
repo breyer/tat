@@ -15,6 +15,7 @@ Ensure you have Python installed. You can download it from the official Python w
 bash
 Copy code
 pip install plotly
+pip install dash (Only if you want to run the live version)
 Ensure you have the SQLite database (data.db3) in the same directory as the script.
 
 3. Usage
