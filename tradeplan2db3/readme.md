@@ -83,7 +83,7 @@ The script automatically generates a timestamped backup of the database pre-upda
 -   **Cleanup Process**: Eliminates the non-archived backup file.
 
 ## Tested TAT Versions
-+ 2.7.10.0
++ needs at least TAT 2.8.26.0
 
 ## Contributions
 
