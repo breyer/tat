@@ -49,6 +49,24 @@ This component is a Python script designed to update trading parameters in the S
 -   The CSV file structure should include columns for time, premium, spread, and stop.
 -   To use, place `tradeplan.csv` and `data.db3` in the script's directory and execute with Python 3.
 
+### 3. [TAT Profit/Loss Visualization Script (pnl)](https://github.com/breyer/tat/tree/main/pnl)
+
+#### Overview
+
+This is a Python script that connects to a SQLite database containing trading data, fetches the data for the current day, and visualizes it using Plotly. The visualization includes metrics such as premium sold and profit/loss (PnL) over time.
+
+#### Key Features
+
+-   ** Real-Time Data Visualization: Generates visual representations of trading data for immediate analysis.
+-   ** Comprehensive Metrics: Showcases premium sold alongside profit and loss over the course of the day.
+-   ** Interactive Graphs: Utilizes Plotly for dynamic and interactive charting capabilities.
+
+#### Prerequisites
+
+- Python 3.x
+- SQLite database (`data.db3`)
+- Required Python packages: `sqlite3`, `logging`, `datetime`, `timedelta`, `plotly.graph_objects`
+
 ## Contributions and License
 
 Contributions are welcome. Please ensure any changes are well-tested before submission. This project is released under the MIT License.
