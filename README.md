@@ -3,8 +3,6 @@
 
 Welcome to the GitHub repository for additional tools for the Trading Automation Toolbox (TAT). This repository contains two main components that are essential for analyzing and updating trading data. Below is a brief overview of each.
 
-![Example plot](https://github.com/breyer/tat/blob/main/plot-example.png?raw=true)
-
 ## Components
 
 ### 1. [Trading Analysis Python Program (ipynb)](https://github.com/breyer/tat/tree/main/ipynb)
@@ -56,6 +54,8 @@ This component is a Python script designed to update trading parameters in the S
 #### Overview
 
 This is a Python script that connects to a SQLite database containing trading data, fetches the data for the current day, and visualizes it using Plotly. The visualization includes metrics such as premium sold and profit/loss (PnL) over time.
+
+![Example plot](https://github.com/breyer/tat/blob/main/plot-example.png?raw=true)
 
 #### Key Features
 
