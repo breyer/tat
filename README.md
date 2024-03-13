@@ -3,6 +3,8 @@
 
 Welcome to the GitHub repository for additional tools for the Trading Automation Toolbox (TAT). This repository contains two main components that are essential for analyzing and updating trading data. Below is a brief overview of each.
 
+[[https://github.com/breyer/tat/blob/main/plot-example.png](https://github.com/breyer/tat/blob/main/plot-example.png?raw=true)
+
 ## Components
 
 ### 1. [Trading Analysis Python Program (ipynb)](https://github.com/breyer/tat/tree/main/ipynb)
