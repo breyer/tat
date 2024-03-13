@@ -2,6 +2,8 @@
 
 This script connects to a SQLite database containing trading data, fetches the data for today, and visualizes it using Plotly. The visualization includes premium sold and profit/loss (PnL) over time.
 
+![Example plot](https://github.com/breyer/tat/blob/main/plot-example.png?raw=true)
+
 ## Prerequisites
 
 - Python 3.x
