@@ -17,7 +17,7 @@ if not os.path.exists(directory):
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Connect to the SQLite database
-conn = sqlite3.connect('data.db3')
+conn = sqlite3.connect('dickson-data.db3')
 logging.info("Connected to the database.")
 
 # Get today's date
@@ -25,6 +25,7 @@ today = datetime.now().date()
 
 # Desired day for visualization (changed to today's date)
 desired_day = today.strftime('%Y-%m-%d')
+#desired_day = (today - timedelta(days=1)).strftime('%Y-%m-%d')
 
 # Calculate the start datetime at 09:00 AM
 start_datetime = datetime.combine(today, datetime.min.time()) + timedelta(hours=9, minutes=20)
