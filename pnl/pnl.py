@@ -45,6 +45,7 @@ FROM DailyLog
 WHERE
     DATE(DT) = ?
     AND TIME(DT) BETWEEN TIME(?) AND TIME(?)
+    AND SPX > 1.0  -- This line ensures only SPX prices higher than 1.0 are selected
 ORDER BY DT ASC
 """
 
