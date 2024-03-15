@@ -17,7 +17,7 @@ if not os.path.exists(directory):
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Connect to the SQLite database
-conn = sqlite3.connect('dickson-data.db3')
+conn = sqlite3.connect('data.db3')
 logging.info("Connected to the database.")
 
 # Get today's date
