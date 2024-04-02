@@ -25,7 +25,6 @@ today = datetime.now().date()
 
 # Desired day for visualization (changed to today's date)
 desired_day = today.strftime('%Y-%m-%d')
-#desired_day = (today - timedelta(days=1)).strftime('%Y-%m-%d')
 
 # Calculate the start datetime at 09:00 AM
 start_datetime = datetime.combine(today, datetime.min.time()) + timedelta(hours=9, minutes=20)
@@ -45,7 +44,6 @@ FROM DailyLog
 WHERE
     DATE(DT) = ?
     AND TIME(DT) BETWEEN TIME(?) AND TIME(?)
-    AND SPX > 1.0  -- This line ensures only SPX prices higher than 1.0 are selected
 ORDER BY DT ASC
 """
 
@@ -95,10 +93,18 @@ def adjust_annotation_position(data_points, current_point, y_values, current_val
         if abs((current_point - point).total_seconds()) < min_distance_x.total_seconds():
             ax *= -1
             break
-    if index % 2 == 0:
-        ay = -(current_value / max(y_values)) * 100
+    if index % 4 == 0:
+        ax = -80
+        ay = -90
+    elif index % 4 == 1:
+        ax = 80
+        ay = -90
+    elif index % 4 == 2:
+        ax = -80
+        ay = 90
     else:
-        ay = (current_value / max(y_values)) * 100
+        ax = 80
+        ay = 90
     if current_value > max(y_values) - min_distance_y:
         ay *= -1
     return ax, ay
@@ -107,9 +113,8 @@ def adjust_annotation_position(data_points, current_point, y_values, current_val
 annotations = []  # Initialize the annotations list at the beginning
 
 # Define the function to create annotations with adjusted positions
-def create_annotation(x, y, text, xref, yref, ax=80, ay=-90):
-    # We no longer use `annotations` within `adjust_annotation_position` call
-    ax, ay = adjust_annotation_position(dates, x, spx_prices if yref == 'y2' else pl, y, ax, ay)
+def create_annotation(x, y, text, xref, yref, index):
+    ax, ay = adjust_annotation_position(dates, x, spx_prices if yref == 'y2' else pl, y, index)
     return go.layout.Annotation(
         x=x,
         y=y,
@@ -126,14 +131,12 @@ def create_annotation(x, y, text, xref, yref, ax=80, ay=-90):
         ay=ay
     )
 
-# Create annotations for the graph, now including SPX high and low
 annotations = [
-    create_annotation(min_pnl_time, min_pnl, f"Lowest PnL: {min_pnl} ({min_pnl_time.strftime('%H:%M')})", 'x', 'y'),
-    create_annotation(max_pnl_time, max_pnl, f"Highest PnL: {max_pnl} ({max_pnl_time.strftime('%H:%M')})", 'x', 'y'),
-    create_annotation(final_pnl_time, final_pnl, f"Final PnL: {final_pnl} ({final_pnl_time.strftime('%H:%M')})", 'x', 'y'),
-    # SPX high and low using the secondary y-axis
-    create_annotation(spx_high_time, spx_high, f"SPX High: {spx_high} ({spx_high_time.strftime('%H:%M')})", 'x', 'y2'),
-    create_annotation(spx_low_time, spx_low, f"SPX Low: {spx_low} ({spx_low_time.strftime('%H:%M')})", 'x', 'y2')
+    create_annotation(min_pnl_time, min_pnl, f"Lowest PnL: {min_pnl} ({min_pnl_time.strftime('%H:%M')})", 'x', 'y', 0),
+    create_annotation(max_pnl_time, max_pnl, f"Highest PnL: {max_pnl} ({max_pnl_time.strftime('%H:%M')})", 'x', 'y', 1),
+    create_annotation(final_pnl_time, final_pnl, f"Final PnL: {final_pnl} ({final_pnl_time.strftime('%H:%M')})", 'x', 'y', 2),
+    create_annotation(spx_high_time, spx_high, f"SPX High: {spx_high} ({spx_high_time.strftime('%H:%M')})", 'x', 'y2', 3),
+    create_annotation(spx_low_time, spx_low, f"SPX Low: {spx_low} ({spx_low_time.strftime('%H:%M')})", 'x', 'y2', 4)
 ]
 
 # Create traces for the graph, including a trace for SPX prices using the secondary y-axis
