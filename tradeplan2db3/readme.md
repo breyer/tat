@@ -60,6 +60,7 @@ The CSV should include columns for:
 -   `Premium`
 -   `Spread`
 -   `Stop`
+-   `Strategy`
 
 ## Database Tables
 
