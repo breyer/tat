@@ -1,4 +1,5 @@
 #! python
+
 import pandas as pd
 import sqlite3
 from datetime import datetime
@@ -40,7 +41,12 @@ for index, row in data.iterrows():
     premium = row['Premium']
     spread = row['Spread']
     stop = row['Stop']
-    strategy = row['Strategy']
+
+    # Check if the "Strategy" column exists in the CSV file
+    if 'Strategy' in row:
+        strategy = row['Strategy']
+    else:
+        strategy = None
 
     # Update for PUT SPREAD
     cursor = conn.execute(f"""
@@ -62,22 +68,18 @@ for index, row in data.iterrows():
     call_ids = [id[0] for id in cursor.fetchall()]
     updated_ids.extend(call_ids)
 
-    # Update Conditions in ScheduleMaster
+    # Update Conditions and Strategy in ScheduleMaster
     for trade_template_id in put_ids:
-        if strategy == 'EMA520':
-            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 > EMA20' WHERE TradeTemplateID = {trade_template_id}")
-        elif strategy == 'EMA540':
+        if strategy:
+            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 > EMA40', Strategy = '{strategy}' WHERE TradeTemplateID = {trade_template_id}")
+        else:
             conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 > EMA40' WHERE TradeTemplateID = {trade_template_id}")
-        elif strategy == 'EMA2040':
-            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA20 > EMA40' WHERE TradeTemplateID = {trade_template_id}")
 
     for trade_template_id in call_ids:
-        if strategy == 'EMA520':
-            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 < EMA20' WHERE TradeTemplateID = {trade_template_id}")
-        elif strategy == 'EMA540':
+        if strategy:
+            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 < EMA40', Strategy = '{strategy}' WHERE TradeTemplateID = {trade_template_id}")
+        else:
             conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 < EMA40' WHERE TradeTemplateID = {trade_template_id}")
-        elif strategy == 'EMA2040':
-            conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA20 < EMA40' WHERE TradeTemplateID = {trade_template_id}")
 
 # Set IsActive to 0 in the ScheduleMaster table
 conn.execute("UPDATE ScheduleMaster SET IsActive = 0")
