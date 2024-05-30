@@ -1,4 +1,3 @@
-#Quantity is the count of contracts to sell/buy -> Optional, can be left empty
 "Hour:Minute","Premium","Spread","Stop","Strategy","Quantity"
 "10:15","3.4","35","1.25x","EMA540"
 "10:30","3.4","35","1.25x","EMA540"
@@ -10,3 +9,6 @@
 "13:15","3.4","35","1.25x","EMA540"
 "13:45","3.4","35","1.25x","EMA540"
 "14:15","3.4","35","1.25x","EMA540"
+
+
+# "Quantity" is the count of contracts to sell/buy -> Optional, can be left empty
