@@ -1,4 +1,3 @@
-#! python
 import pandas as pd
 import sqlite3
 from datetime import datetime
@@ -61,6 +60,7 @@ for index, row in data.iterrows():
     spread = row['Spread']
     stop = row['Stop']
     strategy = row['Strategy']
+    quantity = row.get('Quantity', None)
 
     try:
         # Update for PUT SPREAD
@@ -88,7 +88,7 @@ for index, row in data.iterrows():
         exit(1)
 
     try:
-        # Update Conditions and Strategy in ScheduleMaster
+        # Update Conditions, Strategy, and QtyOverride in ScheduleMaster
         for trade_template_id in put_ids:
             if strategy == 'EMA540':
                 conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 > EMA40', Strategy = '{strategy}' WHERE TradeTemplateID = {trade_template_id}")
@@ -96,6 +96,8 @@ for index, row in data.iterrows():
                 conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 > EMA20', Strategy = '{strategy}' WHERE TradeTemplateID = {trade_template_id}")
             elif strategy == 'EMA2040':
                 conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA20 > EMA40', Strategy = '{strategy}' WHERE TradeTemplateID = {trade_template_id}")
+            if quantity is not None and not pd.isna(quantity):
+                conn.execute(f"UPDATE ScheduleMaster SET QtyOverride = {quantity} WHERE TradeTemplateID = {trade_template_id}")
         
         for trade_template_id in call_ids:
             if strategy == 'EMA540':
@@ -104,6 +106,8 @@ for index, row in data.iterrows():
                 conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA5 < EMA20', Strategy = '{strategy}' WHERE TradeTemplateID = {trade_template_id}")
             elif strategy == 'EMA2040':
                 conn.execute(f"UPDATE ScheduleMaster SET Condition = 'EMA20 < EMA40', Strategy = '{strategy}' WHERE TradeTemplateID = {trade_template_id}")
+            if quantity is not None and not pd.isna(quantity):
+                conn.execute(f"UPDATE ScheduleMaster SET QtyOverride = {quantity} WHERE TradeTemplateID = {trade_template_id}")
     except sqlite3.Error as e:
         print(f"Error occurred while updating ScheduleMaster: {str(e)}")
         conn.close()
