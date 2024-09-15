@@ -25,13 +25,15 @@ The script relies on the following Python libraries:
 - `pyperclip`: To manage clipboard content (for inserting special characters like `@`).
 - `subprocess`: For running system commands, such as PowerShell queries to retrieve UWP app info.
 - `time`: For adding delays between actions.
+- `psutil`: For detecting and stopping the running instance of the `Trade Automation Toolbox.exe` process.
+- `json`: For handling JSON data when interacting with PowerShell queries.
 
 ### Installation
 
 To install the required dependencies, run the following command in your terminal:
 
 ```bash
-pip install pyautogui pygetwindow pyperclip
+pip install pyautogui pygetwindow pyperclip psutil json
 
 ### Usage
 
