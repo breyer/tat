@@ -9,6 +9,8 @@ This script automates the process of logging into the Trade Automation Toolbox (
 - Automatically connects the TAT to your broker after login.
 - Uses clipboard for special characters (like `@`) to ensure consistent input.
 - Adds configurable wait times for login and broker connection.
+- **New Feature**: Optional restart functionality—stop and restart TAT if it's already running.
+- **Graceful Exit**: If TAT is already running and a restart is not needed, the script exits without performing any actions.
 
 ## Requirements
 
@@ -30,3 +32,17 @@ To install the required dependencies, run the following command in your terminal
 
 ```bash
 pip install pyautogui pygetwindow pyperclip
+
+### Usage
+
+Running the Script
+Before running the script, ensure you have the Trade Automation Toolbox installed on your machine.
+
+Update the credentials: Modify the email and password variables at the top of the script with your login details. It's recommended to use environment variables for security instead of hardcoding sensitive information.
+
+Control TAT Restarts:
+
+By default, the script is configured to check if TAT is already running. If it is, the script will exit without taking any action.
+You can control whether TAT should be restarted by modifying the RESTART_TAT_IF_RUNNING variable.
+Set RESTART_TAT_IF_RUNNING to "YES" if you want the script to stop and restart TAT when it's already running.
+Leave it as "NO" to avoid restarting the app.
