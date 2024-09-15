@@ -8,15 +8,19 @@ import json
 import os
 import logging
 
-logging.basicConfig(filename='tat_auto_login.log', level=logging.DEBUG,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Credentials (using environment variables is safer)
+# Configuration Variables
 email = os.getenv("EMAIL", "")
 password = os.getenv("PASSWORD", "")
+RESTART_TAT_IF_RUNNING = "NO"
+LOG_TO_FILE = "NO"  # Set this to 'YES' if you want to log to a file
 
-# Set this to 'YES' if you want to stop and restart TAT if it's already running
-RESTART_TAT_IF_RUNNING = "YES"
+# Set up logging based on the LOG_TO_FILE variable
+if LOG_TO_FILE == "YES":
+    logging.basicConfig(filename='tat_auto_login.log', level=logging.DEBUG,
+                        format='%(asctime)s - %(levelname)s - %(message)s')
+else:
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def get_uwp_app_package_family_name(app_name="Trade Automation Toolbox"):
     """
