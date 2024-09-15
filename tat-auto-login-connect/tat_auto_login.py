@@ -9,6 +9,9 @@ import pyperclip  # For clipboard usage
 email = ""
 password = ""
 
+# Set this to 'YES' if you want to stop and restart TAT if it's already running
+RESTART_TAT_IF_RUNNING = "NO"
+
 def get_uwp_app_package_family_name(app_name="Trade Automation Toolbox"):
     """
     Retrieves the Package Family Name of a UWP app using PowerShell.
@@ -45,6 +48,41 @@ def get_uwp_app_package_family_name(app_name="Trade Automation Toolbox"):
     except Exception as e:
         print(f"Error retrieving the Package Family Name: {e}")
         return None
+
+def is_tat_running():
+    """
+    Checks if the Trade Automation Toolbox (TAT) is currently running.
+    
+    Returns:
+        bool: True if TAT is running, False otherwise.
+    """
+    try:
+        # PowerShell command to check if the app is running
+        command = 'powershell "Get-Process | Where-Object { $_.Name -like \'*TradeAutomationToolbox*\' }"'
+        result = subprocess.run(command, capture_output=True, text=True, shell=True)
+        return bool(result.stdout.strip())
+    except Exception as e:
+        print(f"Error checking if TAT is running: {e}")
+        return False
+
+def stop_uwp_app(app_name="Trade Automation Toolbox"):
+    """
+    Stops the running UWP app by killing its process.
+
+    Args:
+        app_name (str): The name of the UWP app to stop.
+    """
+    try:
+        # PowerShell command to stop the process of the UWP app
+        command = f'powershell "Get-Process | Where-Object {{ $_.Name -like \'*{app_name}*\' }} | Stop-Process"'
+        result = subprocess.run(command, capture_output=True, text=True, shell=True)
+        
+        if result.returncode == 0:
+            print(f"{app_name} stopped successfully.")
+        else:
+            print(f"Failed to stop {app_name}: {result.stderr}")
+    except Exception as e:
+        print(f"Error stopping the app: {e}")
 
 def start_uwp_app(package_family_name):
     """
@@ -136,6 +174,15 @@ def login_to_tat(email, password):
 if __name__ == "__main__":
     # Try to retrieve the Package Family Name of the "Trade Automation Toolbox"
     package_family_name = get_uwp_app_package_family_name("TradeAutomationToolbox")
+
+    # Check if TAT is already running
+    if is_tat_running():
+        if RESTART_TAT_IF_RUNNING == "YES":
+            print("TAT is running. Stopping it before restarting...")
+            stop_uwp_app("Trade Automation Toolbox")
+        else:
+            print("TAT is already running. Exiting script.")
+            exit()
 
     # Start the UWP app if the Package Family Name was found
     if package_family_name:
