@@ -1,9 +1,10 @@
 import subprocess
-import json
 import pyautogui
 import pygetwindow as gw
 import time
 import pyperclip  # For clipboard usage
+import psutil  # To check if TAT is already running
+import json  # To handle JSON data (this was missing)
 
 # Credentials (using environment variables is safer)
 email = ""
@@ -51,38 +52,26 @@ def get_uwp_app_package_family_name(app_name="Trade Automation Toolbox"):
 
 def is_tat_running():
     """
-    Checks if the Trade Automation Toolbox (TAT) is currently running.
+    Checks if the Trade Automation Toolbox (TAT) executable is currently running.
     
     Returns:
         bool: True if TAT is running, False otherwise.
     """
-    try:
-        # PowerShell command to check if the app is running
-        command = 'powershell "Get-Process | Where-Object { $_.Name -like \'*TradeAutomationToolbox*\' }"'
-        result = subprocess.run(command, capture_output=True, text=True, shell=True)
-        return bool(result.stdout.strip())
-    except Exception as e:
-        print(f"Error checking if TAT is running: {e}")
-        return False
+    for process in psutil.process_iter(['pid', 'name']):
+        if process.info['name'] == "Trade Automation Toolbox.exe":
+            print(f"TAT is running with PID: {process.info['pid']}")
+            return True
+    return False
 
-def stop_uwp_app(app_name="Trade Automation Toolbox"):
+def stop_tat():
     """
-    Stops the running UWP app by killing its process.
-
-    Args:
-        app_name (str): The name of the UWP app to stop.
+    Stops the running 'Trade Automation Toolbox.exe' process if it's running.
     """
-    try:
-        # PowerShell command to stop the process of the UWP app
-        command = f'powershell "Get-Process | Where-Object {{ $_.Name -like \'*{app_name}*\' }} | Stop-Process"'
-        result = subprocess.run(command, capture_output=True, text=True, shell=True)
-        
-        if result.returncode == 0:
-            print(f"{app_name} stopped successfully.")
-        else:
-            print(f"Failed to stop {app_name}: {result.stderr}")
-    except Exception as e:
-        print(f"Error stopping the app: {e}")
+    for process in psutil.process_iter(['pid', 'name']):
+        if process.info['name'] == "Trade Automation Toolbox.exe":
+            process.kill()
+            print(f"Stopped TAT with PID: {process.info['pid']}")
+            return
 
 def start_uwp_app(package_family_name):
     """
@@ -179,7 +168,7 @@ if __name__ == "__main__":
     if is_tat_running():
         if RESTART_TAT_IF_RUNNING == "YES":
             print("TAT is running. Stopping it before restarting...")
-            stop_uwp_app("Trade Automation Toolbox")
+            stop_tat()
         else:
             print("TAT is already running. Exiting script.")
             exit()
