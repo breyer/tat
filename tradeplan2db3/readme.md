@@ -1,95 +1,103 @@
-
 # Trade Plan Database Updater for TAT or Trade Automation Toolbox
 
 ## Overview
-This repository contains a Python script designed to update trading parameters in the SQLite database of the "Trade Automation Toolbox" based on input from a CSV file. It is particularly focused on modifying records in the `TradeTemplate` table and managing the `ScheduleMaster` table's active status. Additionally, the script ensures data integrity by creating a backup of the database before any modifications are made.
-
-
-## Important Note on Template Naming
-
-The script is calibrated for use with trade templates named in a specific format: "PUT SPREAD (HH:MM)" or "CALL SPREAD (HH:MM)". It's imperative that your `TradeTemplate` entries in the database precisely follow this naming convention. These names serve as crucial identifiers for trade setups and are integral in the script's process of identifying and updating the correct records. If your templates follow a different naming convention, you will need to modify the script to align with your specific names.
-
-### Identification of Trading Templates
-
-The script employs a meticulous approach to identify trading templates, hinging on their adherence to a predefined naming convention:
-
-1.  **Naming Convention**: Template names combine the trade type with a specific time, following the `[TRADE TYPE] ([TIME])` format, e.g., "PUT SPREAD (09:33)" or "CALL SPREAD (10:00)".
-    
-2.  **Trade Type**: This indicates the nature of the trade, such as "PUT SPREAD" or "CALL SPREAD", differentiating between put option spreads and call option spreads.
-    
-3.  **Time Component**: The time, enclosed in parentheses, is crucial for matching the trade strategy or timing, e.g., "09:33", "10:00".
-    
-4.  **Script's Matching Process**:
-    
-    -   Reads CSV data including time, premium, spread, and stop values.
-    -   Constructs template names from trade type and CSV time data, then matches them with database records.
-5.  **Database Update Process**:
-    
-    -   Identifies and updates the correct trading templates with values from the CSV file, ensuring all relevant templates are current.
+This repository contains a Python script designed to update trading parameters in the SQLite database of the **Trade Automation Toolbox** based on input from a CSV file. It focuses on modifying records in the `TradeTemplate` table and managing the `ScheduleMaster` table's active status. Additionally, the script ensures data integrity by creating a backup of the database before any modifications are made.
 
 ## Key Features
 
--   Automated updating of trading parameters from CSV input.
--   Timestamped database backup for data integrity.
--   Management of `IsActive` status in the `ScheduleMaster` table.
--   Customized for EMA trading strategy and specific naming conventions.
+- **Automated Updating**: Updates trading parameters from CSV input seamlessly.
+- **Backup Management**: Creates timestamped backups of the database to ensure data integrity.
+- **Flexible Initialization**:
+  - `--initialize`: Inserts missing `TradeConditions`, `TradeTemplates`, and `ScheduleMaster` entries without deleting existing data.
+  - `--force-initialize`: Deletes existing entries and reinitializes the database with specified plans.
+- **Schedule Management**: Manages the `IsActive` status in the `ScheduleMaster` table.
+- **EMA Strategy Customization**: Tailored for EMA trading strategies with specific naming conventions.
 
 ## Setup Requirements
 
--   Python 3
--   pandas (for data handling)
--   sqlite3 (for database interaction)
--   shutil, os (standard libraries for file operations)
+- **Python 3**
+- **Required Python Libraries**:
+  - `pandas` (for data handling)
+  - `sqlite3` (for database interaction)
+  - `shutil`, `os`, `argparse`, `sys` (standard libraries for file and system operations)
 
 ## Usage Instructions
 
-1.  Ensure `tradeplan.csv` and `data.db3` are in the same directory as the script.
-2.  Execute the script with Python 3:
-    
-    bashCopy code
-    
-    `python3 tradeplan2db3.py` 
-    
-3.  The script processes the CSV file, updates the database, and creates a backup autonomously.
+1. **Ensure Prerequisites**:
+   - Place `tradeplan.csv` and `data.db3` in the same directory as the script.
+
+2. **Run the Script**:
+
+   - **Standard Update**:
+     
+     To process the CSV file and update the database:
+     
+     ```bash
+     python tradeplan2db3.py --qty 2
+     ```
+     
+     **Optional**: To distribute contracts based on `PnL Rank`:
+     
+     ```bash
+     python tradeplan2db3.py --qty 2 --distribution
+     ```
+
+   - **Initialize the Database**:
+     
+     - **Initialize Without Deleting Existing Data**:
+       
+       Inserts missing `TradeConditions`, `TradeTemplates`, and `ScheduleMaster` entries without affecting existing data:
+       
+       ```bash
+       python tradeplan2db3.py --initialize
+       ```
+     
+     - **Force Initialize (Delete Existing Data and Reinitialize)**:
+       
+       Deletes existing `TradeConditions`, `TradeTemplates`, and `ScheduleMaster` entries and reinitializes the database. You can specify the number of plans to initialize (default is 1):
+       
+       ```bash
+       python tradeplan2db3.py --force-initialize 1
+       ```
+
+3. **Backup Management**:
+   
+   The script automatically creates a timestamped backup of the database before making any changes, stored in the `tradeplan-backup` directory as a ZIP file for efficiency.
+
+## Command Line Options
+
+- `--qty <integer>`: 
+  - **Description**: Sets the quantity (`Qty`) for all entry times in the `TradeTemplate` table.
+  - **Usage**: `--qty 2`
+
+- `--distribution`: 
+  - **Description**: Adjusts `Qty` based on `PnL Rank`. Adds 1 to top 1-3 ranks and subtracts 1 from ranks 8-10 if there are at least 10 entries.
+  - **Usage**: `--distribution`
+
+- `--initialize`: 
+  - **Description**: Initializes the database by inserting missing `TradeConditions`, `TradeTemplates`, and `ScheduleMaster` entries without deleting existing data.
+  - **Usage**: `--initialize`
+
+- `--force-initialize [<integer>]`: 
+  - **Description**: Forces the initialization of the database by deleting existing `TradeConditions`, `TradeTemplates`, and `ScheduleMaster` entries and reinitializes with the specified number of plans (default is 1 if no number is provided).
+  - **Usage**: `--force-initialize 2`
 
 ## CSV File Structure
 
-The CSV should include columns for:
+The CSV should include the following columns:
 
--   `Hour:Minute`
--   `Premium`
--   `Spread`
--   `Stop`
--   `Strategy`
+- `Hour:Minute`: Time in `HH:MM` format, e.g., `13:15`
+- `Premium`: Premium value (float), e.g., `2.0`
+- `Spread`: Spread value, can contain dashes which will be replaced by commas, e.g., `20-25-30`
+- `Stop`: Stop value, typically a multiple with an `x`, e.g., `1.25x`
+- `Strategy`: Strategy identifier, e.g., `EMA2040`
+- `PnL Rank`: Rank based on Profit and Loss
+- `Qty`: Quantity (integer) *(optional if using `--qty` parameter)*
+- `Plan`: Plan identifier, e.g., `P1` *(optional; defaults to `P1` if missing)*
 
-## Database Tables
+**Example**:
 
--   `TradeTemplate`: Houses trade templates for updating.
--   `ScheduleMaster`: Oversees active status of templates.
-
-## Backup Protocol
-
-The script automatically generates a timestamped backup of the database pre-update, storing it as a ZIP file for efficiency.
-
-## Detailed Script Functions
-
--   **Module Importation**: Loads necessary modules.
--   **Path Definitions**: Establishes paths for database and CSV.
--   **Database Backup**: Creates a backup file, copies the database, and archives it.
--   **Database Connection**: Initiates connection to the SQLite database.
--   **CSV Reading**: Imports trading data from CSV.
--   **Database Updating**: Modifies `TradeTemplate` records based on CSV data.
--   **ScheduleMaster Management**: Adjusts `IsActive` status based on updates.
--   **Commit and Closure**: Finalizes changes and disconnects from the database.
--   **Cleanup Process**: Eliminates the non-archived backup file.
-
-## Tested TAT Versions
-+ needs at least TAT 2.8.26.0
-
-## Contributions
-
-We welcome contributions! If you're interested in improving or adapting this tool, please feel free to submit pull requests. Ensure your changes are well-tested before submission.
-
-## License
-
-This project is released under the MIT License.
+```csv
+Hour:Minute,Premium,Spread,Stop,Strategy,PnL Rank,Qty,Plan
+13:15,2.0,20-25-30,1.25x,EMA2040,1,2,P1
+14:30,2.0,25-30-35,1.25x,EMA2040,2,2,P1
