@@ -120,7 +120,7 @@ def create_trade_conditions(conn):
 def create_trade_templates(conn, plan_suffixes):
     """
     Create TradeTemplate entries for PUT and CALL spreads for each plan and time.
-    Only inserts templates that do not already exist.
+    Only inserts templates that do not already exist and ensures IsDeleted is set to 0.
     """
     for plan in plan_suffixes:
         for time in times:
@@ -243,10 +243,15 @@ def create_trade_templates(conn, plan_suffixes):
 
             try:
                 # Check if PUT SPREAD template already exists
-                cursor = conn.execute("SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?", (put_template["Name"],))
+                cursor = conn.execute("SELECT TradeTemplateID, IsDeleted FROM TradeTemplate WHERE Name = ?", (put_template["Name"],))
                 result = cursor.fetchone()
                 if result:
-                    print(f"TradeTemplate already exists: {put_template['Name']} with ID {result[0]}")
+                    trade_template_id, is_deleted = result
+                    print(f"TradeTemplate already exists: {put_template['Name']} with ID {trade_template_id}")
+                    # Ensure IsDeleted is set to 0
+                    if is_deleted != 0:
+                        conn.execute("UPDATE TradeTemplate SET IsDeleted = 0 WHERE TradeTemplateID = ?", (trade_template_id,))
+                        print(f"Updated 'IsDeleted' to 0 for TradeTemplate ID {trade_template_id}: {put_template['Name']}")
                 else:
                     # Insert PUT SPREAD template
                     columns = ', '.join(put_template.keys())
@@ -256,10 +261,15 @@ def create_trade_templates(conn, plan_suffixes):
                     print(f"Inserted TradeTemplate: PUT SPREAD ({time}) {plan}")
 
                 # Check if CALL SPREAD template already exists
-                cursor = conn.execute("SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?", (call_template["Name"],))
+                cursor = conn.execute("SELECT TradeTemplateID, IsDeleted FROM TradeTemplate WHERE Name = ?", (call_template["Name"],))
                 result = cursor.fetchone()
                 if result:
-                    print(f"TradeTemplate already exists: {call_template['Name']} with ID {result[0]}")
+                    trade_template_id, is_deleted = result
+                    print(f"TradeTemplate already exists: {call_template['Name']} with ID {trade_template_id}")
+                    # Ensure IsDeleted is set to 0
+                    if is_deleted != 0:
+                        conn.execute("UPDATE TradeTemplate SET IsDeleted = 0 WHERE TradeTemplateID = ?", (trade_template_id,))
+                        print(f"Updated 'IsDeleted' to 0 for TradeTemplate ID {trade_template_id}: {call_template['Name']}")
                 else:
                     # Insert CALL SPREAD template
                     columns = ', '.join(call_template.keys())
