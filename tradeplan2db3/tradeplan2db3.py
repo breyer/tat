@@ -557,11 +557,11 @@ def process_tradeplan(conn, data):
         if result:
             put_template_id = result[0]
 
-            # Update TradeTemplate for PUT SPREAD
+            # **Änderung:** Aktualisiere nur TargetMax statt TargetMin und TargetMax
             try:
                 conn.execute("""
                     UPDATE TradeTemplate
-                    SET TargetMin = ?, LongWidth = ?, StopMultiple = ?
+                    SET TargetMax = ?, LongWidth = ?, StopMultiple = ?
                     WHERE TradeTemplateID = ?
                 """, (premium, spread, stop_multiple, put_template_id))
                 print(f"Updated TradeTemplate for PUT SPREAD '{put_template_name}'.")
@@ -601,11 +601,11 @@ def process_tradeplan(conn, data):
         if result:
             call_template_id = result[0]
 
-            # Update TradeTemplate for CALL SPREAD
+            # **Änderung:** Aktualisiere nur TargetMax statt TargetMin und TargetMax
             try:
                 conn.execute("""
                     UPDATE TradeTemplate
-                    SET TargetMin = ?, LongWidth = ?, StopMultiple = ?
+                    SET TargetMax = ?, LongWidth = ?, StopMultiple = ?
                     WHERE TradeTemplateID = ?
                 """, (premium, spread, stop_multiple, call_template_id))
                 print(f"Updated TradeTemplate for CALL SPREAD '{call_template_name}'.")
