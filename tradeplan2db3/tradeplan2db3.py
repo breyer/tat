@@ -75,6 +75,7 @@ times = [
 def create_trade_conditions(conn):
     """
     Create EMA conditions in the database and return their IDs.
+    Also, set RetryUntilExpiration to 0 for all TradeConditions.
     """
     # Define EMA conditions
     conditions = {
@@ -97,13 +98,15 @@ def create_trade_conditions(conn):
                 condition_id = result[0]
                 print(f"TradeCondition already exists: {description} with ID {condition_id}")
             else:
-                cursor = conn.execute("INSERT INTO TradeCondition (Name) VALUES (?)", (description,))
+                # Insert TradeCondition with RetryUntilExpiration set to 0
+                cursor = conn.execute("INSERT INTO TradeCondition (Name, RetryUntilExpiration) VALUES (?, ?)", (description, 0))
                 condition_id = cursor.lastrowid
                 print(f"Inserted TradeCondition: {description} with ID {condition_id}")
 
+                # Insert TradeConditionDetail with ComparisonType set to 'Input'
                 conn.execute("""
                     INSERT INTO TradeConditionDetail (TradeConditionID, [Group], Input, Operator, Comparison, ComparisonType)
-                    VALUES (?, 1, ?, ?, ?, 'EMA')
+                    VALUES (?, 1, ?, ?, ?, 'Input')
                 """, (condition_id, input_val, operator, comparison))
                 print(f"Inserted TradeConditionDetail for ID {condition_id}")
             
@@ -113,6 +116,26 @@ def create_trade_conditions(conn):
             conn.rollback()
             conn.close()
             sys.exit(1)
+
+    # Set RetryUntilExpiration to 0 for all existing TradeConditions
+    try:
+        conn.execute("UPDATE TradeCondition SET RetryUntilExpiration = 0")
+        print("Set 'RetryUntilExpiration' to 0 for all TradeConditions.")
+    except sqlite3.Error as e:
+        print(f"Error updating 'RetryUntilExpiration' for TradeConditions: {str(e)}")
+        conn.rollback()
+        conn.close()
+        sys.exit(1)
+
+    # Set ComparisonType to 'Input' for all existing TradeConditionDetail entries
+    try:
+        conn.execute("UPDATE TradeConditionDetail SET ComparisonType = 'Input'")
+        print("Set 'ComparisonType' to 'Input' for all TradeConditionDetail entries.")
+    except sqlite3.Error as e:
+        print(f"Error updating 'ComparisonType' for TradeConditionDetail: {str(e)}")
+        conn.rollback()
+        conn.close()
+        sys.exit(1)
 
     print("All default EMA conditions processed successfully.")
     return trade_condition_ids
@@ -164,6 +187,13 @@ def create_trade_templates(conn, plan_suffixes):
                 "Adjustment2ChangeOffset": 0,
                 "Adjustment2Hour": 0,
                 "Adjustment2Minute": 0,
+                "Adjustment3Type": "Stop Multiple",
+                "Adjustment3": None,
+                "Adjustment3ChangeType": "None",
+                "Adjustment3Change": 0,
+                "Adjustment3ChangeOffset": 0,
+                "Adjustment3Hour": 0,
+                "Adjustment3Minute": 0,
                 "ExitHour": 0,
                 "ExitMinute": 0,
                 "LowerTarget": 0,
