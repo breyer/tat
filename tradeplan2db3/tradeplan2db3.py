@@ -5,6 +5,7 @@ import shutil
 import os
 import argparse
 import sys
+import re
 
 # Argument parser for command line parameters
 parser = argparse.ArgumentParser(description='Process tradeplan.')
@@ -74,7 +75,7 @@ times = [
 
 def create_trade_conditions(conn):
     """
-    Create EMA conditions in the database and return their IDs.
+    Create EMA conditions in the database and return their IDs and descriptions.
     Also, set RetryUntilExpiration to 0 for all TradeConditions.
     """
     # Define EMA conditions
@@ -110,7 +111,10 @@ def create_trade_conditions(conn):
                 """, (condition_id, input_val, operator, comparison))
                 print(f"Inserted TradeConditionDetail for ID {condition_id}")
             
-            trade_condition_ids[name] = condition_id
+            trade_condition_ids[name] = {
+                "id": condition_id,
+                "description": description
+            }
         except sqlite3.Error as e:
             print(f"Error inserting or fetching TradeCondition '{description}': {str(e)}")
             conn.rollback()
@@ -359,49 +363,99 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts):
                     # Define ScheduleType
                     schedule_type = "Trade"
 
-                    # Check if ScheduleMaster for PUT SPREAD already exists for this account and strategy
-                    cursor = conn.execute("""
-                        SELECT ScheduleMasterID FROM ScheduleMaster
-                        WHERE TradeTemplateID = ? AND Strategy = 'EMA520' AND Account = ?
-                    """, (put_template_id, account))
-                    if cursor.fetchone():
-                        print(f"ScheduleMaster already exists for PUT SPREAD '{put_template_name}' with Strategy EMA520 and Account '{account}'")
-                    else:
-                        # Insert ScheduleMaster for PUT SPREAD with EMA520 condition
-                        conn.execute("""
-                            INSERT INTO ScheduleMaster (
-                                Account, TradeTemplateID, Hour, Minute, Second,
-                                IsActive, DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday, DaySunday,
-                                Strategy, DisplayStrategy, QtyOverride, TradeConditionID, ScheduleType
-                            ) VALUES (
-                                ?, ?, ?, ?, 0,
-                                0, 1, 1, 1, 1, 1, 0,
-                                'EMA520', 'EMA520', 1, ?, ?
-                            )
-                        """, (account, put_template_id, hour, minute, trade_condition_ids['EMA520'], schedule_type))
-                        print(f"Inserted ScheduleMaster for PUT SPREAD '{put_template_name}' with Strategy EMA520 and Account '{account}'")
+                    # Mapping strategies to their corresponding condition IDs and descriptions
+                    # Assuming trade_condition_ids contains all necessary mappings
+                    # For PUT spreads
+                    put_strategy = 'EMA520'  # Adjust based on actual strategy
+                    put_trade_condition = trade_condition_ids.get(put_strategy)
+                    if not put_trade_condition:
+                        print(f"Error: TradeCondition for strategy '{put_strategy}' not found.")
+                        conn.rollback()
+                        conn.close()
+                        sys.exit(1)
+                    display_strategy_put = f"PUT SPREAD {plan}"
+                    display_condition_put = put_trade_condition["description"]
 
-                    # Check if ScheduleMaster for CALL SPREAD already exists for this account and strategy
+                    # For CALL spreads
+                    call_strategy = 'EMA520_INV'  # Adjust based on actual strategy
+                    call_trade_condition = trade_condition_ids.get(call_strategy)
+                    if not call_trade_condition:
+                        print(f"Error: TradeCondition for strategy '{call_strategy}' not found.")
+                        conn.rollback()
+                        conn.close()
+                        sys.exit(1)
+                    display_strategy_call = f"CALL SPREAD {plan}"
+                    display_condition_call = call_trade_condition["description"]
+
+                    # Insert ScheduleMaster for PUT SPREAD
                     cursor = conn.execute("""
                         SELECT ScheduleMasterID FROM ScheduleMaster
-                        WHERE TradeTemplateID = ? AND Strategy = 'EMA520_INV' AND Account = ?
-                    """, (call_template_id, account))
+                        WHERE TradeTemplateID = ? AND Strategy = ? AND Account = ?
+                    """, (put_template_id, put_strategy, account))
                     if cursor.fetchone():
-                        print(f"ScheduleMaster already exists for CALL SPREAD '{call_template_name}' with Strategy EMA520_INV and Account '{account}'")
+                        print(f"ScheduleMaster already exists for PUT SPREAD '{put_template_name}' with Strategy {put_strategy} and Account '{account}'")
                     else:
-                        # Insert ScheduleMaster for CALL SPREAD with EMA520_INV condition
+                        # Insert ScheduleMaster for PUT SPREAD
                         conn.execute("""
                             INSERT INTO ScheduleMaster (
-                                Account, TradeTemplateID, Hour, Minute, Second,
-                                IsActive, DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday, DaySunday,
-                                Strategy, DisplayStrategy, QtyOverride, TradeConditionID, ScheduleType
+                                Account, TradeTemplateID, ScheduleType, QtyOverride,
+                                Hour, Minute, Second, ExpirationMinutes, IsActive,
+                                ScheduleGroupID, Condition, Strategy, DisplayStrategy,
+                                TradeConditionID, DisplayCondition,
+                                DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday, DaySunday,
+                                QtyType, QtyAllocation, QtyAllocationMax
                             ) VALUES (
-                                ?, ?, ?, ?, 0,
-                                0, 1, 1, 1, 1, 1, 0,
-                                'EMA520_INV', 'EMA520_INV', 1, ?, ?
+                                ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?,
+                                ?, ?,
+                                ?, ?, ?, ?, ?, ?,
+                                ?, ?, ?
                             )
-                        """, (account, call_template_id, hour, minute, trade_condition_ids['EMA520_INV'], schedule_type))
-                        print(f"Inserted ScheduleMaster for CALL SPREAD '{call_template_name}' with Strategy EMA520_INV and Account '{account}'")
+                        """, (
+                            account, put_template_id, schedule_type, 1,
+                            hour, minute, 0, 5, 1,  # ExpirationMinutes set to 5
+                            0, None, put_strategy, display_strategy_put,
+                            put_trade_condition["id"], display_condition_put,
+                            1, 1, 1, 1, 1, 0,  # DayMonday to DaySunday
+                            "FixedQty", 0.0, 0  # QtyType, QtyAllocation, QtyAllocationMax
+                        ))
+                        print(f"Inserted ScheduleMaster for PUT SPREAD '{put_template_name}' with Strategy {put_strategy} and Account '{account}'")
+
+                    # Insert ScheduleMaster for CALL SPREAD
+                    cursor = conn.execute("""
+                        SELECT ScheduleMasterID FROM ScheduleMaster
+                        WHERE TradeTemplateID = ? AND Strategy = ? AND Account = ?
+                    """, (call_template_id, call_strategy, account))
+                    if cursor.fetchone():
+                        print(f"ScheduleMaster already exists for CALL SPREAD '{call_template_name}' with Strategy {call_strategy} and Account '{account}'")
+                    else:
+                        # Insert ScheduleMaster for CALL SPREAD
+                        conn.execute("""
+                            INSERT INTO ScheduleMaster (
+                                Account, TradeTemplateID, ScheduleType, QtyOverride,
+                                Hour, Minute, Second, ExpirationMinutes, IsActive,
+                                ScheduleGroupID, Condition, Strategy, DisplayStrategy,
+                                TradeConditionID, DisplayCondition,
+                                DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday, DaySunday,
+                                QtyType, QtyAllocation, QtyAllocationMax
+                            ) VALUES (
+                                ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?,
+                                ?, ?,
+                                ?, ?, ?, ?, ?, ?,
+                                ?, ?, ?
+                            )
+                        """, (
+                            account, call_template_id, schedule_type, 1,
+                            hour, minute, 0, 5, 1,  # ExpirationMinutes set to 5
+                            0, None, call_strategy, display_strategy_call,
+                            call_trade_condition["id"], display_condition_call,
+                            1, 1, 1, 1, 1, 0,  # DayMonday to DaySunday
+                            "FixedQty", 0.0, 0  # QtyType, QtyAllocation, QtyAllocationMax
+                        ))
+                        print(f"Inserted ScheduleMaster for CALL SPREAD '{call_template_name}' with Strategy {call_strategy} and Account '{account}'")
 
                 except sqlite3.Error as e:
                     print(f"Error inserting ScheduleMaster for {time} {plan} with Account '{account}': {str(e)}")
@@ -494,20 +548,38 @@ def get_accounts():
             print("Account ID cannot be empty. Please try again.")
             continue
 
-        # Process the account input
-        if account_input.startswith("IB:U") and len(account_input) == 11 and account_input[4:].isdigit():
-            # Correct format
+        # Define regex patterns for different input formats
+        patterns = [
+            r'^IB:U\d{7}$',      # IB:U1234567
+            r'^IB:\d{7}$',        # IB:1234567
+            r'^U\d{7}$',          # U1234567
+            r'^\d{7}$'            # 1234567
+        ]
+
+        matched = False
+        for pattern in patterns:
+            if re.match(pattern, account_input):
+                matched = True
+                break
+
+        if not matched:
+            print(f"Invalid format for Account ID. Please enter in the format 'IB:U########' (e.g., {example_account}).")
+            continue
+
+        # Normalize the account input to "IB:U########"
+        if account_input.startswith("IB:U") and len(account_input) == 11:
             formatted_account = account_input
-        elif account_input.startswith("IB:") and len(account_input) == 10 and account_input[4:].isdigit():
+        elif account_input.startswith("IB:") and len(account_input) == 10:
             # Missing 'U', add it
             formatted_account = f"IB:U{account_input[4:]}"
-        elif account_input.startswith("U") and len(account_input) == 8 and account_input[1:].isdigit():
+        elif account_input.startswith("U") and len(account_input) == 8:
             # Missing 'IB:', add it
             formatted_account = f"IB:{account_input}"
-        elif len(account_input) == 8 and account_input.isdigit():
+        elif len(account_input) == 7 and account_input.isdigit():
             # Missing 'IB:U', add both
             formatted_account = f"IB:U{account_input}"
         else:
+            # This should not happen due to regex, but added for safety
             print(f"Invalid format for Account ID. Please enter in the format 'IB:U########' (e.g., {example_account}).")
             continue
 
@@ -541,24 +613,27 @@ def process_tradeplan(conn, data):
         unique_plans = ['P1']
         print("No 'Plan' column found in the tradeplan.csv. Treating all entries as Plan P1.")
 
-    # Fetch TradeConditionIDs from the database
+    # Fetch TradeConditionIDs and descriptions from the database
     trade_condition_ids = {}
     cursor = conn.execute("SELECT TradeConditionID, Name FROM TradeCondition")
     for row in cursor.fetchall():
         condition_id, name = row
-        if name == "EMA5 > EMA20":
-            trade_condition_ids["EMA520"] = condition_id
-        elif name == "EMA5 < EMA20":
-            trade_condition_ids["EMA520_INV"] = condition_id
-        elif name == "EMA5 > EMA40":
-            trade_condition_ids["EMA540"] = condition_id
-        elif name == "EMA5 < EMA40":
-            trade_condition_ids["EMA540_INV"] = condition_id
-        elif name == "EMA20 > EMA40":
-            trade_condition_ids["EMA2040"] = condition_id
-        elif name == "EMA20 < EMA40":
-            trade_condition_ids["EMA2040_INV"] = condition_id
-        # Add more conditions here if necessary
+        for strategy_code, details in trade_condition_ids.items():
+            # Assuming strategy_code maps to condition name
+            if details["description"] == name:
+                trade_condition_ids[strategy_code]["id"] = condition_id
+
+    # Alternatively, fetch the mapping correctly
+    trade_condition_ids = {}
+    cursor = conn.execute("SELECT TradeConditionID, Name FROM TradeCondition")
+    for row in cursor.fetchall():
+        condition_id, name = row
+        for strategy_code, details in create_trade_conditions(conn).items():
+            if details["description"] == name:
+                trade_condition_ids[strategy_code] = {
+                    "id": condition_id,
+                    "description": name
+                }
 
     # Determine required conditions based on strategies in the CSV
     required_conditions = set()
@@ -624,16 +699,22 @@ def process_tradeplan(conn, data):
         qty_override = int(row['Qty'])
         ema_strategy = row['Strategy'].upper()
 
-        # Determine the TradeConditionID based on the strategy
+        # Determine the TradeConditionID and DisplayCondition based on the strategy
         if ema_strategy == "EMA520":
-            condition_id_put = trade_condition_ids.get("EMA520")
-            condition_id_call = trade_condition_ids.get("EMA520_INV")
+            condition_id_put = trade_condition_ids.get("EMA520", {}).get("id")
+            condition_name_put = trade_condition_ids.get("EMA520", {}).get("description", "EMA5 > EMA20")
+            condition_id_call = trade_condition_ids.get("EMA520_INV", {}).get("id")
+            condition_name_call = trade_condition_ids.get("EMA520_INV", {}).get("description", "EMA5 < EMA20")
         elif ema_strategy == "EMA540":
-            condition_id_put = trade_condition_ids.get("EMA540")
-            condition_id_call = trade_condition_ids.get("EMA540_INV")
+            condition_id_put = trade_condition_ids.get("EMA540", {}).get("id")
+            condition_name_put = trade_condition_ids.get("EMA540", {}).get("description", "EMA5 > EMA40")
+            condition_id_call = trade_condition_ids.get("EMA540_INV", {}).get("id")
+            condition_name_call = trade_condition_ids.get("EMA540_INV", {}).get("description", "EMA5 < EMA40")
         elif ema_strategy == "EMA2040":
-            condition_id_put = trade_condition_ids.get("EMA2040")
-            condition_id_call = trade_condition_ids.get("EMA2040_INV")
+            condition_id_put = trade_condition_ids.get("EMA2040", {}).get("id")
+            condition_name_put = trade_condition_ids.get("EMA2040", {}).get("description", "EMA20 > EMA40")
+            condition_id_call = trade_condition_ids.get("EMA2040_INV", {}).get("id")
+            condition_name_call = trade_condition_ids.get("EMA2040_INV", {}).get("description", "EMA20 < EMA40")
         else:
             print(f"Error: Unknown Strategy '{ema_strategy}' at row {index + 1}.")
             conn.close()
@@ -667,9 +748,9 @@ def process_tradeplan(conn, data):
             try:
                 conn.execute("""
                     UPDATE ScheduleMaster
-                    SET IsActive = 1, QtyOverride = ?, Strategy = ?, TradeConditionID = ?
+                    SET IsActive = 1, QtyOverride = ?, Strategy = ?, TradeConditionID = ?, DisplayStrategy = ?, DisplayCondition = ?
                     WHERE TradeTemplateID = ?
-                """, (qty_override, ema_strategy, condition_id_put, put_template_id))
+                """, (qty_override, ema_strategy, condition_id_put, f"PUT SPREAD {plan}", condition_name_put, put_template_id))
                 print(f"Updated ScheduleMaster for PUT SPREAD '{put_template_name}'.")
             except sqlite3.Error as e:
                 print(f"Error updating ScheduleMaster for PUT SPREAD '{put_template_name}': {str(e)}")
@@ -711,9 +792,9 @@ def process_tradeplan(conn, data):
             try:
                 conn.execute("""
                     UPDATE ScheduleMaster
-                    SET IsActive = 1, QtyOverride = ?, Strategy = ?, TradeConditionID = ?
+                    SET IsActive = 1, QtyOverride = ?, Strategy = ?, TradeConditionID = ?, DisplayStrategy = ?, DisplayCondition = ?
                     WHERE TradeTemplateID = ?
-                """, (qty_override, f"{ema_strategy}_INV", condition_id_call, call_template_id))
+                """, (qty_override, f"{ema_strategy}_INV", condition_id_call, f"CALL SPREAD {plan}", condition_name_call, call_template_id))
                 print(f"Updated ScheduleMaster for CALL SPREAD '{call_template_name}'.")
             except sqlite3.Error as e:
                 print(f"Error updating ScheduleMaster for CALL SPREAD '{call_template_name}': {str(e)}")
