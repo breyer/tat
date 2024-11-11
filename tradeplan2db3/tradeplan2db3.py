@@ -318,11 +318,14 @@ def create_trade_templates(conn, plan_suffixes):
                 conn.close()
                 sys.exit(1)
 
-def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts):
+def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, active=True):
     """
     Create ScheduleMaster entries linked to TradeTemplates with appropriate EMA conditions.
     Only inserts schedules that do not already exist.
     Each account will have its own ScheduleMaster for each TradeTemplate.
+    
+    Parameters:
+        active (bool): Determines if the schedule should be active (True) or inactive (False).
     """
     for plan in plan_suffixes:
         for time in times:
@@ -414,13 +417,14 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts):
                             )
                         """, (
                             account, put_template_id, schedule_type, 1,
-                            hour, minute, 0, 5, 1,  # ExpirationMinutes set to 5
+                            hour, minute, 0, 5, int(active),  # Set IsActive based on the 'active' parameter
                             0, None, put_strategy, display_strategy_put,
                             put_trade_condition["id"], display_condition_put,
                             1, 1, 1, 1, 1, 0,  # DayMonday to DaySunday
                             "FixedQty", 0.0, 0  # QtyType, QtyAllocation, QtyAllocationMax
                         ))
-                        print(f"Inserted ScheduleMaster for PUT SPREAD '{put_template_name}' with Strategy {put_strategy} and Account '{account}'")
+                        status = "active" if active else "inactive"
+                        print(f"Inserted ScheduleMaster for PUT SPREAD '{put_template_name}' with Strategy {put_strategy} and Account '{account}' as {status}.")
 
                     # Insert ScheduleMaster for CALL SPREAD
                     cursor = conn.execute("""
@@ -449,13 +453,14 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts):
                             )
                         """, (
                             account, call_template_id, schedule_type, 1,
-                            hour, minute, 0, 5, 1,  # ExpirationMinutes set to 5
+                            hour, minute, 0, 5, int(active),  # Set IsActive based on the 'active' parameter
                             0, None, call_strategy, display_strategy_call,
                             call_trade_condition["id"], display_condition_call,
                             1, 1, 1, 1, 1, 0,  # DayMonday to DaySunday
                             "FixedQty", 0.0, 0  # QtyType, QtyAllocation, QtyAllocationMax
                         ))
-                        print(f"Inserted ScheduleMaster for CALL SPREAD '{call_template_name}' with Strategy {call_strategy} and Account '{account}'")
+                        status = "active" if active else "inactive"
+                        print(f"Inserted ScheduleMaster for CALL SPREAD '{call_template_name}' with Strategy {call_strategy} and Account '{account}' as {status}.")
 
                 except sqlite3.Error as e:
                     print(f"Error inserting ScheduleMaster for {time} {plan} with Account '{account}': {str(e)}")
@@ -466,7 +471,8 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts):
 def initialize_database(conn, plan_count, force, accounts):
     """
     Initialize the database with TradeConditions, TradeTemplates, and ScheduleMaster entries.
-    If force is True, it deletes existing entries. Otherwise, it inserts missing entries without deleting.
+    If force is True, it deletes existing entries and creates schedules as inactive.
+    Otherwise, it inserts missing entries without deleting.
     """
     try:
         if force:
@@ -501,9 +507,11 @@ def initialize_database(conn, plan_count, force, accounts):
             if force:
                 # If force initializing, ensure all plans are initialized
                 plan_suffixes = [f"P{i}" for i in range(1, plan_count + 1)]
+                active_status = False  # Schedules should be inactive
             else:
                 # If not force, assume plan_count=1 for non-forced initialize
                 plan_suffixes = ['P1']
+                active_status = True  # Schedules can be active
 
             create_trade_templates(conn, plan_suffixes)
 
@@ -513,7 +521,8 @@ def initialize_database(conn, plan_count, force, accounts):
                     conn.rollback()
                     conn.close()
                     sys.exit(1)
-                create_schedules(conn, plan_suffixes, trade_condition_ids, accounts)
+                # Pass active=False to deactivate schedules
+                create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, active=active_status)
             else:
                 # For non-force initialize, you might want to handle differently
                 # Here, we'll assume accounts are already set up
@@ -521,7 +530,7 @@ def initialize_database(conn, plan_count, force, accounts):
 
         conn.commit()
         if force:
-            print(f"Initialized database with TradeTemplates for plans P1 to P{plan_count}, and associated Schedules.")
+            print(f"Initialized database with TradeTemplates for plans P1 to P{plan_count}, and associated Schedules as inactive.")
         elif args.initialize:
             print("Inserted missing TradeTemplates and ScheduleMaster entries.")
         else:
