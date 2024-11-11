@@ -314,10 +314,11 @@ def create_trade_templates(conn, plan_suffixes):
                 conn.close()
                 sys.exit(1)
 
-def create_schedules(conn, plan_suffixes, trade_condition_ids):
+def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts):
     """
     Create ScheduleMaster entries linked to TradeTemplates with appropriate EMA conditions.
     Only inserts schedules that do not already exist.
+    Each account will have its own ScheduleMaster for each TradeTemplate.
     """
     for plan in plan_suffixes:
         for time in times:
@@ -353,58 +354,62 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids):
                 conn.close()
                 sys.exit(1)
 
-            try:
-                # Check if ScheduleMaster for PUT SPREAD already exists
-                cursor = conn.execute("""
-                    SELECT ScheduleMasterID FROM ScheduleMaster
-                    WHERE TradeTemplateID = ? AND Strategy = 'EMA520'
-                """, (put_template_id,))
-                if cursor.fetchone():
-                    print(f"ScheduleMaster already exists for PUT SPREAD '{put_template_name}' with Strategy EMA520")
-                else:
-                    # Insert ScheduleMaster for PUT SPREAD with EMA520 condition
-                    conn.execute("""
-                        INSERT INTO ScheduleMaster (
-                            Account, TradeTemplateID, Hour, Minute, Second,
-                            IsActive, DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday,
-                            Strategy, DisplayStrategy, QtyOverride, TradeConditionID
-                        ) VALUES (
-                            '', ?, ?, ?, 0,
-                            0, 1, 1, 1, 1, 1,
-                            'EMA520', 'EMA520', 1, ?
-                        )
-                    """, (put_template_id, hour, minute, trade_condition_ids['EMA520']))
-                    print(f"Inserted ScheduleMaster for PUT SPREAD '{put_template_name}' with Strategy EMA520")
+            for account in accounts:
+                try:
+                    # Define ScheduleType
+                    schedule_type = "Trade"
 
-                # Check if ScheduleMaster for CALL SPREAD already exists
-                cursor = conn.execute("""
-                    SELECT ScheduleMasterID FROM ScheduleMaster
-                    WHERE TradeTemplateID = ? AND Strategy = 'EMA520_INV'
-                """, (call_template_id,))
-                if cursor.fetchone():
-                    print(f"ScheduleMaster already exists for CALL SPREAD '{call_template_name}' with Strategy EMA520_INV")
-                else:
-                    # Insert ScheduleMaster for CALL SPREAD with EMA520_INV condition
-                    conn.execute("""
-                        INSERT INTO ScheduleMaster (
-                            Account, TradeTemplateID, Hour, Minute, Second,
-                            IsActive, DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday,
-                            Strategy, DisplayStrategy, QtyOverride, TradeConditionID
-                        ) VALUES (
-                            '', ?, ?, ?, 0,
-                            0, 1, 1, 1, 1, 1,
-                            'EMA520_INV', 'EMA520_INV', 1, ?
-                        )
-                    """, (call_template_id, hour, minute, trade_condition_ids['EMA520_INV']))
-                    print(f"Inserted ScheduleMaster for CALL SPREAD '{call_template_name}' with Strategy EMA520_INV")
+                    # Check if ScheduleMaster for PUT SPREAD already exists for this account and strategy
+                    cursor = conn.execute("""
+                        SELECT ScheduleMasterID FROM ScheduleMaster
+                        WHERE TradeTemplateID = ? AND Strategy = 'EMA520' AND Account = ?
+                    """, (put_template_id, account))
+                    if cursor.fetchone():
+                        print(f"ScheduleMaster already exists for PUT SPREAD '{put_template_name}' with Strategy EMA520 and Account '{account}'")
+                    else:
+                        # Insert ScheduleMaster for PUT SPREAD with EMA520 condition
+                        conn.execute("""
+                            INSERT INTO ScheduleMaster (
+                                Account, TradeTemplateID, Hour, Minute, Second,
+                                IsActive, DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday, DaySunday,
+                                Strategy, DisplayStrategy, QtyOverride, TradeConditionID, ScheduleType
+                            ) VALUES (
+                                ?, ?, ?, ?, 0,
+                                0, 1, 1, 1, 1, 1, 0,
+                                'EMA520', 'EMA520', 1, ?, ?
+                            )
+                        """, (account, put_template_id, hour, minute, trade_condition_ids['EMA520'], schedule_type))
+                        print(f"Inserted ScheduleMaster for PUT SPREAD '{put_template_name}' with Strategy EMA520 and Account '{account}'")
 
-            except sqlite3.Error as e:
-                print(f"Error inserting ScheduleMaster for {time} {plan}: {str(e)}")
-                conn.rollback()
-                conn.close()
-                sys.exit(1)
+                    # Check if ScheduleMaster for CALL SPREAD already exists for this account and strategy
+                    cursor = conn.execute("""
+                        SELECT ScheduleMasterID FROM ScheduleMaster
+                        WHERE TradeTemplateID = ? AND Strategy = 'EMA520_INV' AND Account = ?
+                    """, (call_template_id, account))
+                    if cursor.fetchone():
+                        print(f"ScheduleMaster already exists for CALL SPREAD '{call_template_name}' with Strategy EMA520_INV and Account '{account}'")
+                    else:
+                        # Insert ScheduleMaster for CALL SPREAD with EMA520_INV condition
+                        conn.execute("""
+                            INSERT INTO ScheduleMaster (
+                                Account, TradeTemplateID, Hour, Minute, Second,
+                                IsActive, DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday, DaySunday,
+                                Strategy, DisplayStrategy, QtyOverride, TradeConditionID, ScheduleType
+                            ) VALUES (
+                                ?, ?, ?, ?, 0,
+                                0, 1, 1, 1, 1, 1, 0,
+                                'EMA520_INV', 'EMA520_INV', 1, ?, ?
+                            )
+                        """, (account, call_template_id, hour, minute, trade_condition_ids['EMA520_INV'], schedule_type))
+                        print(f"Inserted ScheduleMaster for CALL SPREAD '{call_template_name}' with Strategy EMA520_INV and Account '{account}'")
 
-def initialize_database(conn, plan_count, force):
+                except sqlite3.Error as e:
+                    print(f"Error inserting ScheduleMaster for {time} {plan} with Account '{account}': {str(e)}")
+                    conn.rollback()
+                    conn.close()
+                    sys.exit(1)
+
+def initialize_database(conn, plan_count, force, accounts):
     """
     Initialize the database with TradeConditions, TradeTemplates, and ScheduleMaster entries.
     If force is True, it deletes existing entries. Otherwise, it inserts missing entries without deleting.
@@ -447,7 +452,18 @@ def initialize_database(conn, plan_count, force):
                 plan_suffixes = ['P1']
 
             create_trade_templates(conn, plan_suffixes)
-            create_schedules(conn, plan_suffixes, trade_condition_ids)
+
+            if force:
+                if not accounts:
+                    print("Error: No accounts provided for force-initialize.")
+                    conn.rollback()
+                    conn.close()
+                    sys.exit(1)
+                create_schedules(conn, plan_suffixes, trade_condition_ids, accounts)
+            else:
+                # For non-force initialize, you might want to handle differently
+                # Here, we'll assume accounts are already set up
+                pass
 
         conn.commit()
         if force:
@@ -462,6 +478,52 @@ def initialize_database(conn, plan_count, force):
         conn.rollback()
         conn.close()
         sys.exit(1)
+
+def get_accounts():
+    """
+    Prompt the user to input Account IDs in the format "IB:U1234567".
+    Allows up to 3 accounts.
+    """
+    accounts = []
+    max_accounts = 3
+    example_account = "IB:U1234567"
+
+    while len(accounts) < max_accounts:
+        account_input = input(f"Enter Account ID (e.g., {example_account}): ").strip()
+        if not account_input:
+            print("Account ID cannot be empty. Please try again.")
+            continue
+
+        # Process the account input
+        if account_input.startswith("IB:U") and len(account_input) == 11 and account_input[4:].isdigit():
+            # Correct format
+            formatted_account = account_input
+        elif account_input.startswith("IB:") and len(account_input) == 10 and account_input[4:].isdigit():
+            # Missing 'U', add it
+            formatted_account = f"IB:U{account_input[4:]}"
+        elif account_input.startswith("U") and len(account_input) == 8 and account_input[1:].isdigit():
+            # Missing 'IB:', add it
+            formatted_account = f"IB:{account_input}"
+        elif len(account_input) == 8 and account_input.isdigit():
+            # Missing 'IB:U', add both
+            formatted_account = f"IB:U{account_input}"
+        else:
+            print(f"Invalid format for Account ID. Please enter in the format 'IB:U########' (e.g., {example_account}).")
+            continue
+
+        accounts.append(formatted_account)
+        print(f"Added Account: {formatted_account}")
+
+        if len(accounts) < max_accounts:
+            add_more = input("Do you want to add another account? (y/n): ").strip().lower()
+            if add_more != 'y':
+                break
+
+    if not accounts:
+        print("No valid accounts provided. Exiting.")
+        sys.exit(1)
+
+    return accounts
 
 def process_tradeplan(conn, data):
     """
@@ -587,7 +649,7 @@ def process_tradeplan(conn, data):
         if result:
             put_template_id = result[0]
 
-            # **Änderung:** Aktualisiere nur TargetMax statt TargetMin und TargetMax
+            # Update only TargetMax, LongWidth, and StopMultiple
             try:
                 conn.execute("""
                     UPDATE TradeTemplate
@@ -631,7 +693,7 @@ def process_tradeplan(conn, data):
         if result:
             call_template_id = result[0]
 
-            # **Änderung:** Aktualisiere nur TargetMax statt TargetMin und TargetMax
+            # Update only TargetMax, LongWidth, and StopMultiple
             try:
                 conn.execute("""
                     UPDATE TradeTemplate
@@ -682,14 +744,20 @@ def main():
             plan_count = args.force_initialize
         else:
             plan_count = 1  # Default to 1 plan if no number is provided
-        initialize_database(conn, plan_count, force=True)
+
+        # Prompt user for Account IDs
+        print("Force initializing the database. Please provide Account IDs.")
+        accounts = get_accounts()
+
+        initialize_database(conn, plan_count, force=True, accounts=accounts)
         conn.close()
         sys.exit(0)
 
     if args.initialize:
         # Determine the number of plans to initialize; assuming 1 if not specified
         plan_count = 1
-        initialize_database(conn, plan_count, force=False)
+        # For non-force initialize, accounts are not required
+        initialize_database(conn, plan_count, force=False, accounts=[])
         conn.close()
         sys.exit(0)
 
