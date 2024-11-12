@@ -10,7 +10,7 @@ import re
 # Argument parser for command line parameters
 parser = argparse.ArgumentParser(description='Process tradeplan.')
 parser.add_argument('--qty', type=int, help='Set quantity for all entry times')
-parser.add_argument('--distribution', action='store_true', help='Distribute contracts based on PnL Rank')
+parser.add_argument('--distribution', action='store_true', help='Distribute contracts based on PnL Rank')/7
 parser.add_argument('--force-initialize', type=int, nargs='?', const=1,
                     help='Force initialize database by deleting existing TradeTemplates and Schedules. Provide the number of plans to initialize (default is 1)')
 parser.add_argument('--initialize', action='store_true',
@@ -544,12 +544,12 @@ def initialize_database(conn, plan_count, force, accounts):
 
 def get_accounts():
     """
-    Prompt the user to input Account IDs in the format "IB:U1234567".
+    Prompt the user to input Account IDs in the format "IB:U1234567" or "IB:U12345678".
     Allows up to 3 accounts.
     """
     accounts = []
     max_accounts = 3
-    example_account = "IB:U1234567"
+    example_account = "IB:U1234567 or IB:U12345678"
 
     while len(accounts) < max_accounts:
         account_input = input(f"Enter Account ID (e.g., {example_account}): ").strip()
@@ -559,10 +559,10 @@ def get_accounts():
 
         # Define regex patterns for different input formats
         patterns = [
-            r'^IB:U\d{7}$',      # IB:U1234567
-            r'^IB:\d{7}$',        # IB:1234567
-            r'^U\d{7}$',          # U1234567
-            r'^\d{7}$'            # 1234567
+            r'^IB:U\d{7,8}$',      # IB:U1234567 or IB:U12345678
+            r'^IB:\d{7,8}$',        # IB:1234567 or IB:12345678
+            r'^U\d{7,8}$',          # U1234567 or U12345678
+            r'^\d{7,8}$'            # 1234567 or 12345678
         ]
 
         matched = False
@@ -576,15 +576,15 @@ def get_accounts():
             continue
 
         # Normalize the account input to "IB:U########"
-        if account_input.startswith("IB:U") and len(account_input) == 11:
+        if account_input.startswith("IB:U") and len(account_input) in [11, 12]:
             formatted_account = account_input
-        elif account_input.startswith("IB:") and len(account_input) == 10:
+        elif account_input.startswith("IB:") and len(account_input) in [10, 11]:
             # Missing 'U', add it
             formatted_account = f"IB:U{account_input[4:]}"
-        elif account_input.startswith("U") and len(account_input) == 8:
+        elif account_input.startswith("U") and len(account_input) in [8, 9]:
             # Missing 'IB:', add it
             formatted_account = f"IB:{account_input}"
-        elif len(account_input) == 7 and account_input.isdigit():
+        elif len(account_input) in [7, 8] and account_input.isdigit():
             # Missing 'IB:U', add both
             formatted_account = f"IB:U{account_input}"
         else:
