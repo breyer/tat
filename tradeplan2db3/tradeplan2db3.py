@@ -10,7 +10,7 @@ import re
 # Argument parser for command line parameters
 parser = argparse.ArgumentParser(description='Process tradeplan.')
 parser.add_argument('--qty', type=int, help='Set quantity for all entry times')
-parser.add_argument('--distribution', action='store_true', help='Distribute contracts based on PnL Rank')/7
+parser.add_argument('--distribution', action='store_true', help='Distribute contracts based on PnL Rank')
 parser.add_argument('--force-initialize', type=int, nargs='?', const=1,
                     help='Force initialize database by deleting existing TradeTemplates and Schedules. Provide the number of plans to initialize (default is 1)')
 parser.add_argument('--initialize', action='store_true',
