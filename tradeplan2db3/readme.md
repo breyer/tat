@@ -14,6 +14,25 @@ In short, it allows you to:
 
 **Important:** After importing and updating your database with this script, it is **recommended to restart TAT** to ensure all changes are properly recognized and applied.
 
+## Changelog
+**2024-12-30**
+Added support for an optional OptionType column in tradeplan.csv.
+
+When OptionType is present, the script updates only the template corresponding to "P" (PUT) or "C" (CALL) for each row.
+When OptionType is missing, the script reverts to the legacy behavior of updating both PUT and CALL templates for every row.
+This ensures backward compatibility with older CSV files that lack an OptionType column while allowing per-row control of PUT vs. CALL for newer CSV files.
+
+- Refactoring of process_tradeplan:
+
+Now detects whether OptionType exists and branches the update logic accordingly.
+Introduced smaller helper methods (e.g., update_put_template, update_call_template, etc.) to keep code organized and easier to maintain.
+
+- Improved error handling for OptionType:
+
+If the column is present but contains invalid values (neither P nor C), the script logs an error and exits cleanly.
+If the column is missing entirely, the script automatically falls back to updating both PUT and CALL spreads per row (the original approach).
+These enhancements allow the script to handle both types of CSV file structures without requiring additional parameters or user intervention.
+
 ## Key Features
 
 - **Automated Updates from CSV**:  
