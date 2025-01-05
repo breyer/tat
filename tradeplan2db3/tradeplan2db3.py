@@ -224,7 +224,7 @@ def create_trade_conditions(conn):
 
     trade_condition_ids = {}
     try:
-        conn.execute("BEGIN TRANSACTION")
+        # Removed the nested "BEGIN TRANSACTION" here
         for name, (description, operator, input_val, comparison) in conditions.items():
             # Check if the TradeCondition already exists
             cursor = conn.execute(
@@ -269,14 +269,10 @@ def create_trade_conditions(conn):
         conn.execute("UPDATE TradeConditionDetail SET ComparisonType = 'Input'")
         logging.info("Set 'ComparisonType' to 'Input' for all TradeConditionDetail entries.")
 
-        conn.commit()
         logging.info("All default EMA conditions processed successfully.")
     except sqlite3.Error as e:
         logging.error(f"Error inserting or updating TradeConditions: {str(e)}")
-        conn.rollback()
-        conn.close()
-        sys.exit(1)
-
+        raise  # re-raise so the caller can handle commit/rollback
     return trade_condition_ids
 
 
@@ -291,7 +287,7 @@ def create_trade_templates(conn, plan_suffixes, times):
         times (list): List of times for trade entries.
     """
     try:
-        conn.execute("BEGIN TRANSACTION")
+        # Removed the nested "BEGIN TRANSACTION" here
         for plan in plan_suffixes:
             for time in times:
                 put_template = {
@@ -455,7 +451,6 @@ def create_trade_templates(conn, plan_suffixes, times):
                     logging.info(
                         f"TradeTemplate already exists: {call_template['Name']} with ID {trade_template_id}"
                     )
-                    # Ensure IsDeleted is set to 0
                     if is_deleted != 0:
                         conn.execute(
                             "UPDATE TradeTemplate SET IsDeleted = 0 WHERE TradeTemplateID = ?",
@@ -476,13 +471,10 @@ def create_trade_templates(conn, plan_suffixes, times):
                     )
                     logging.info(f"Inserted TradeTemplate: {call_template['Name']}")
 
-        conn.commit()
         logging.info("TradeTemplates created or updated successfully.")
     except sqlite3.Error as e:
         logging.error(f"Error inserting TradeTemplates: {str(e)}")
-        conn.rollback()
-        conn.close()
-        sys.exit(1)
+        raise
 
 
 def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, active=True):
@@ -500,7 +492,7 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
         active (bool): Determines if the schedule should be active (True) or inactive (False).
     """
     try:
-        conn.execute("BEGIN TRANSACTION")
+        # Removed the nested "BEGIN TRANSACTION" here
         for plan in plan_suffixes:
             for time in times:
                 hour, minute = map(int, time.split(':'))
@@ -521,9 +513,7 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
                     print(
                         f"Error: PUT SPREAD TradeTemplate '{put_template_name}' not found."
                     )
-                    conn.rollback()
-                    conn.close()
-                    sys.exit(1)
+                    raise ValueError("Missing PUT template.")
 
                 # Get TradeTemplateID for CALL SPREAD
                 call_template_name = f"CALL SPREAD ({time}) {plan}"
@@ -541,9 +531,7 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
                     print(
                         f"Error: CALL SPREAD TradeTemplate '{call_template_name}' not found."
                     )
-                    conn.rollback()
-                    conn.close()
-                    sys.exit(1)
+                    raise ValueError("Missing CALL template.")
 
                 for account in accounts:
                     schedule_type = "Trade"
@@ -556,9 +544,7 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
                     call_trade_condition = trade_condition_ids.get(call_strategy)
                     if not put_trade_condition or not call_trade_condition:
                         print("Error: Missing trade conditions for default scheduling.")
-                        conn.rollback()
-                        conn.close()
-                        sys.exit(1)
+                        raise ValueError("Missing trade conditions.")
 
                     display_strategy_put = f"PUT SPREAD {plan}"
                     display_condition_put = put_trade_condition["description"]
@@ -646,13 +632,10 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
                             f"Strategy {call_strategy}, Account {account}, IsActive={active}"
                         )
 
-        conn.commit()
         logging.info("ScheduleMaster entries created or updated successfully.")
     except sqlite3.Error as e:
         logging.error(f"Error inserting ScheduleMaster entries: {str(e)}")
-        conn.rollback()
-        conn.close()
-        sys.exit(1)
+        raise
 
 
 def verify_put_update(conn, trade_template_id, expected_target_max, expected_long_width, expected_stop_multiple):
@@ -748,7 +731,6 @@ def initialize_database(conn, plan_count, force, accounts, times):
                 logging.warning(
                     f"Could not reset TradeCondition ID sequence. {str(e)}"
                 )
-
         else:
             logging.info(
                 "Initializing database by inserting missing TradeConditions, "
@@ -1252,6 +1234,7 @@ def main():
         sys.exit(1)
 
     # Create or ensure we have trade conditions
+    # (this does not begin its own transaction anymore)
     trade_condition_ids = create_trade_conditions(conn)
 
     # Now update templates & schedules from CSV
