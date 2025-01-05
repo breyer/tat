@@ -2,13 +2,9 @@
 """
 tradeplan2db3.py
 
-This script processes a trade plan from a CSV file and updates an SQLite database accordingly.
-It handles database backups, initializes trade conditions, trade templates, and schedules based
-on the provided CSV and command-line arguments.
-
-Usage:
-    python tradeplan2db3.py [--qty QTY] [--distribution] [--force-initialize [PLAN_COUNT]]
-                            [--initialize]
+Fix for "cannot start a transaction within a transaction".
+Removes nested transactions in child functions, so that
+only the parent functions handle BEGIN/COMMIT/ROLLBACK.
 """
 
 import argparse
@@ -24,48 +20,34 @@ import pandas as pd
 
 
 def parse_arguments():
-    """
-    Parse command-line arguments.
-    """
     parser = argparse.ArgumentParser(description='Process tradeplan.')
-    parser.add_argument(
-        '--qty',
-        type=int,
-        help='Set quantity for all entry times'
-    )
-    parser.add_argument(
-        '--distribution',
-        action='store_true',
-        help='Distribute contracts based on PnL Rank'
-    )
+    parser.add_argument('--qty', type=int, help='Set quantity for all entry times')
+    parser.add_argument('--distribution', action='store_true', help='Distribute contracts based on PnL Rank')
     parser.add_argument(
         '--force-initialize',
         type=int,
         nargs='?',
-        const=-1,  # Sentinel value to indicate no number provided
+        const=-1,  # Sentinel value if user does not provide a plan count
         help=(
-            'Force initialize database by deleting existing TradeTemplates and '
-            'Schedules. If no number is provided, the script will prompt for one.'
+            'Force initialize DB by deleting existing TradeTemplates and Schedules. '
+            'If no number is provided, the script will prompt for one.'
         )
     )
     parser.add_argument(
         '--initialize',
         action='store_true',
         help=(
-            'Initialize database by inserting missing TradeConditions, '
-            'TradeTemplates, and ScheduleMaster entries without deleting existing data'
+            'Initialize DB by inserting missing TradeConditions, TradeTemplates, and ScheduleMaster '
+            'entries without deleting existing data.'
         )
     )
     return parser.parse_args()
 
 
 def setup_logging():
-    """
-    Configure logging for the script.
-    """
     logging.basicConfig(
         filename='tradeplan_updates.log',
-        filemode='a',  # Append mode
+        filemode='a',
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
@@ -74,13 +56,6 @@ def setup_logging():
 def create_backup(db_path, backup_dir_path):
     """
     Create a backup of the database and compress it into a ZIP archive.
-
-    Args:
-        db_path (str): Path to the SQLite database file.
-        backup_dir_path (str): Path to the backup directory.
-
-    Returns:
-        str: Path to the unzipped backup file.
     """
     current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_filename = f'data_backup_{current_datetime}'
@@ -112,12 +87,6 @@ def create_backup(db_path, backup_dir_path):
 def connect_database(db_path):
     """
     Connect to the SQLite database.
-
-    Args:
-        db_path (str): Path to the SQLite database file.
-
-    Returns:
-        sqlite3.Connection: SQLite database connection object.
     """
     try:
         conn = sqlite3.connect(db_path)
@@ -131,11 +100,7 @@ def connect_database(db_path):
 
 def get_accounts():
     """
-    Prompt the user to input Account IDs in the format "IB:U1234567" or "IB:U12345678".
-    Allows up to 3 accounts.
-
-    Returns:
-        list: List of formatted account IDs.
+    Prompt the user to input up to 3 IB account IDs (e.g. IB:U1234567).
     """
     accounts = []
     max_accounts = 3
@@ -147,40 +112,34 @@ def get_accounts():
             print("Account ID cannot be empty. Please try again.")
             continue
 
-        # Define regex patterns for different input formats
         patterns = [
             r'^IB:U\d{7,8}$',  # IB:U1234567 or IB:U12345678
-            r'^IB:\d{7,8}$',    # IB:1234567 or IB:12345678
-            r'^U\d{7,8}$',      # U1234567 or U12345678
-            r'^\d{7,8}$'        # 1234567 or 12345678
+            r'^IB:\d{7,8}$',   # IB:1234567 or IB:12345678
+            r'^U\d{7,8}$',     # U1234567 or U12345678
+            r'^\d{7,8}$'       # 1234567 or 12345678
         ]
-
         matched = any(re.match(pattern, account_input) for pattern in patterns)
-
         if not matched:
             print(
-                f"Invalid format for Account ID. Please enter in the format 'IB:U########' "
-                f"(e.g., {example_account})."
+                f"Invalid format. Please enter 'IB:U########' (e.g., {example_account})."
             )
             continue
 
-        # Normalize the account input to "IB:U########"
+        # Normalize the account to IB:U########
         if account_input.startswith("IB:U") and len(account_input) in [11, 12]:
             formatted_account = account_input
         elif account_input.startswith("IB:") and len(account_input) in [10, 11]:
-            # Missing 'U', add it
-            formatted_account = f"IB:U{account_input[4:]}"
+            # Missing 'U'
+            formatted_account = "IB:U" + account_input[4:]
         elif account_input.startswith("U") and len(account_input) in [8, 9]:
-            # Missing 'IB:', add it
-            formatted_account = f"IB:{account_input}"
-        elif len(account_input) in [7, 8] and account_input.isdigit():
-            # Missing 'IB:U', add both
-            formatted_account = f"IB:U{account_input}"
+            # Missing 'IB:'
+            formatted_account = "IB:" + account_input
+        elif account_input.isdigit() and len(account_input) in [7, 8]:
+            # Missing 'IB:U'
+            formatted_account = "IB:U" + account_input
         else:
-            # This should not happen due to regex, but added for safety
             print(
-                f"Invalid format for Account ID. Please enter in the format 'IB:U########' "
-                f"(e.g., {example_account})."
+                f"Invalid format for Account ID. Please enter 'IB:U########'."
             )
             continue
 
@@ -189,8 +148,8 @@ def get_accounts():
         logging.info(f"Added Account: {formatted_account}")
 
         if len(accounts) < max_accounts:
-            add_more = input("Do you want to add another account? (y/n): ").strip().lower()
-            if add_more != 'y':
+            more = input("Do you want to add another account? (y/n): ").strip().lower()
+            if more != 'y':
                 break
 
     if not accounts:
@@ -203,14 +162,7 @@ def get_accounts():
 
 def create_trade_conditions(conn):
     """
-    Create EMA conditions in the database and return their IDs and descriptions.
-    Also, set RetryUntilExpiration to 0 for all TradeConditions.
-
-    Args:
-        conn (sqlite3.Connection): SQLite database connection object.
-
-    Returns:
-        dict: Mapping of condition names to their IDs and descriptions.
+    Insert or confirm the default EMA conditions, setting RetryUntilExpiration=0.
     """
     conditions = {
         "EMA520": ("EMA5 > EMA20", ">", "EMA5", "EMA20"),
@@ -219,36 +171,31 @@ def create_trade_conditions(conn):
         "EMA540_INV": ("EMA5 < EMA40", "<", "EMA5", "EMA40"),
         "EMA2040": ("EMA20 > EMA40", ">", "EMA20", "EMA40"),
         "EMA2040_INV": ("EMA20 < EMA40", "<", "EMA20", "EMA40"),
-        # Add more EMA strategies here if needed
     }
 
     trade_condition_ids = {}
+
     try:
-        # Removed the nested "BEGIN TRANSACTION" here
-        for name, (description, operator, input_val, comparison) in conditions.items():
-            # Check if the TradeCondition already exists
+        # No BEGIN TRANSACTION here
+        for name, (desc, operator, input_val, comparison) in conditions.items():
             cursor = conn.execute(
                 "SELECT TradeConditionID FROM TradeCondition WHERE Name = ?",
-                (description,)
+                (desc,)
             )
-            result = cursor.fetchone()
-            if result:
-                condition_id = result[0]
-                logging.info(
-                    f"TradeCondition already exists: {description} with ID {condition_id}"
-                )
+            found = cursor.fetchone()
+            if found:
+                condition_id = found[0]
+                logging.info(f"TradeCondition already exists: {desc} with ID {condition_id}")
             else:
-                # Insert TradeCondition with RetryUntilExpiration set to 0
+                # Insert
                 cursor = conn.execute(
                     "INSERT INTO TradeCondition (Name, RetryUntilExpiration) VALUES (?, ?)",
-                    (description, 0)
+                    (desc, 0)
                 )
                 condition_id = cursor.lastrowid
-                logging.info(
-                    f"Inserted TradeCondition: {description} with ID {condition_id}"
-                )
+                logging.info(f"Inserted TradeCondition: {desc} with ID {condition_id}")
 
-                # Insert TradeConditionDetail
+                # Insert detail
                 conn.execute("""
                     INSERT INTO TradeConditionDetail (
                         TradeConditionID, [Group], Input, Operator, Comparison, ComparisonType
@@ -258,40 +205,37 @@ def create_trade_conditions(conn):
 
             trade_condition_ids[name] = {
                 "id": condition_id,
-                "description": description
+                "description": desc
             }
 
-        # Set RetryUntilExpiration to 0 for all existing TradeConditions
+        # Update existing conditions
         conn.execute("UPDATE TradeCondition SET RetryUntilExpiration = 0")
         logging.info("Set 'RetryUntilExpiration' to 0 for all TradeConditions.")
 
-        # Set ComparisonType to 'Input' for all existing TradeConditionDetail entries
         conn.execute("UPDATE TradeConditionDetail SET ComparisonType = 'Input'")
         logging.info("Set 'ComparisonType' to 'Input' for all TradeConditionDetail entries.")
 
         logging.info("All default EMA conditions processed successfully.")
     except sqlite3.Error as e:
-        logging.error(f"Error inserting or updating TradeConditions: {str(e)}")
-        raise  # re-raise so the caller can handle commit/rollback
+        logging.error(f"Error inserting/updating TradeConditions: {str(e)}")
+        raise
+
     return trade_condition_ids
 
 
 def create_trade_templates(conn, plan_suffixes, times):
     """
-    Create TradeTemplate entries for PUT and CALL spreads for each plan and time.
-    Only inserts templates that do not already exist and ensures IsDeleted is set to 0.
-
-    Args:
-        conn (sqlite3.Connection): SQLite database connection object.
-        plan_suffixes (list): List of plan suffixes (e.g., ['P1', 'P2']).
-        times (list): List of times for trade entries.
+    Create or update PUT and CALL templates for each plan and time.
     """
     try:
-        # Removed the nested "BEGIN TRANSACTION" here
         for plan in plan_suffixes:
-            for time in times:
+            for t in times:
+                put_name = f"PUT SPREAD ({t}) {plan}"
+                call_name = f"CALL SPREAD ({t}) {plan}"
+
+                # PUT template dict
                 put_template = {
-                    "Name": f"PUT SPREAD ({time}) {plan}",
+                    "Name": put_name,
                     "TradeType": "PutSpread",
                     "TargetType": "Credit",
                     "TargetMin": 1.0,
@@ -401,167 +345,104 @@ def create_trade_templates(conn, plan_suffixes, times):
                     "MinEntryPrice": 0.0
                 }
 
-                # Copy for CALL SPREAD
                 call_template = put_template.copy()
-                call_template["Name"] = f"CALL SPREAD ({time}) {plan}"
+                call_template["Name"] = call_name
                 call_template["TradeType"] = "CallSpread"
                 call_template["Strategy"] = f"CALL SPREAD {plan}"
-                call_template["TargetMax"] = 0.0  # Irrelevant for CALL spreads
+                # For example, set target max to 0 for calls
+                call_template["TargetMax"] = 0.0
 
-                # Check if PUT SPREAD template already exists
+                # Check/insert PUT
                 cursor = conn.execute(
                     "SELECT TradeTemplateID, IsDeleted FROM TradeTemplate WHERE Name = ?",
-                    (put_template["Name"],)
+                    (put_name,)
                 )
-                result = cursor.fetchone()
-                if result:
-                    trade_template_id, is_deleted = result
-                    logging.info(
-                        f"TradeTemplate already exists: {put_template['Name']} with ID {trade_template_id}"
-                    )
-                    # Ensure IsDeleted is set to 0
-                    if is_deleted != 0:
-                        conn.execute(
-                            "UPDATE TradeTemplate SET IsDeleted = 0 WHERE TradeTemplateID = ?",
-                            (trade_template_id,)
-                        )
-                        logging.info(
-                            f"Updated 'IsDeleted' to 0 for TradeTemplate ID {trade_template_id}: "
-                            f"{put_template['Name']}"
-                        )
+                existing = cursor.fetchone()
+                if existing:
+                    existing_id, is_del = existing
+                    logging.info(f"PUT template already exists: {put_name} (ID: {existing_id})")
+                    if is_del != 0:
+                        conn.execute("UPDATE TradeTemplate SET IsDeleted=0 WHERE TradeTemplateID=?", (existing_id,))
                 else:
-                    # Insert PUT SPREAD template
-                    columns = ', '.join(put_template.keys())
+                    cols = ', '.join(put_template.keys())
                     placeholders = ', '.join(['?'] * len(put_template))
-                    values = tuple(put_template.values())
-                    conn.execute(
-                        f"INSERT INTO TradeTemplate ({columns}) VALUES ({placeholders})",
-                        values
-                    )
-                    logging.info(f"Inserted TradeTemplate: {put_template['Name']}")
+                    vals = tuple(put_template.values())
+                    conn.execute(f"INSERT INTO TradeTemplate ({cols}) VALUES ({placeholders})", vals)
+                    logging.info(f"Inserted PUT template: {put_name}")
 
-                # Check if CALL SPREAD template already exists
+                # Check/insert CALL
                 cursor = conn.execute(
                     "SELECT TradeTemplateID, IsDeleted FROM TradeTemplate WHERE Name = ?",
-                    (call_template["Name"],)
+                    (call_name,)
                 )
-                result = cursor.fetchone()
-                if result:
-                    trade_template_id, is_deleted = result
-                    logging.info(
-                        f"TradeTemplate already exists: {call_template['Name']} with ID {trade_template_id}"
-                    )
-                    if is_deleted != 0:
-                        conn.execute(
-                            "UPDATE TradeTemplate SET IsDeleted = 0 WHERE TradeTemplateID = ?",
-                            (trade_template_id,)
-                        )
-                        logging.info(
-                            f"Updated 'IsDeleted' to 0 for TradeTemplate ID {trade_template_id}: "
-                            f"{call_template['Name']}"
-                        )
+                existing = cursor.fetchone()
+                if existing:
+                    existing_id, is_del = existing
+                    logging.info(f"CALL template already exists: {call_name} (ID: {existing_id})")
+                    if is_del != 0:
+                        conn.execute("UPDATE TradeTemplate SET IsDeleted=0 WHERE TradeTemplateID=?", (existing_id,))
                 else:
-                    # Insert CALL SPREAD template
-                    columns = ', '.join(call_template.keys())
+                    cols = ', '.join(call_template.keys())
                     placeholders = ', '.join(['?'] * len(call_template))
-                    values = tuple(call_template.values())
-                    conn.execute(
-                        f"INSERT INTO TradeTemplate ({columns}) VALUES ({placeholders})",
-                        values
-                    )
-                    logging.info(f"Inserted TradeTemplate: {call_template['Name']}")
+                    vals = tuple(call_template.values())
+                    conn.execute(f"INSERT INTO TradeTemplate ({cols}) VALUES ({placeholders})", vals)
+                    logging.info(f"Inserted CALL template: {call_name}")
 
         logging.info("TradeTemplates created or updated successfully.")
     except sqlite3.Error as e:
-        logging.error(f"Error inserting TradeTemplates: {str(e)}")
+        logging.error(f"Error inserting/updating TradeTemplates: {str(e)}")
         raise
 
 
 def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, active=True):
     """
-    Create ScheduleMaster entries linked to TradeTemplates with appropriate EMA conditions.
-    Only inserts schedules that do not already exist.
-    Each account will have its own ScheduleMaster for each TradeTemplate.
-
-    Args:
-        conn (sqlite3.Connection): SQLite database connection object.
-        plan_suffixes (list): List of plan suffixes (e.g., ['P1', 'P2']).
-        trade_condition_ids (dict): Mapping of condition names to their IDs and descriptions.
-        accounts (list): List of account IDs.
-        times (list): List of times for trade entries.
-        active (bool): Determines if the schedule should be active (True) or inactive (False).
+    Create or update ScheduleMaster entries for each plan/time/account.
     """
     try:
-        # Removed the nested "BEGIN TRANSACTION" here
         for plan in plan_suffixes:
-            for time in times:
-                hour, minute = map(int, time.split(':'))
+            for t in times:
+                hour, minute = map(int, t.split(':'))
+                put_name = f"PUT SPREAD ({t}) {plan}"
+                call_name = f"CALL SPREAD ({t}) {plan}"
 
-                # Get TradeTemplateID for PUT SPREAD
-                put_template_name = f"PUT SPREAD ({time}) {plan}"
+                # Lookup the template IDs
                 cursor = conn.execute(
-                    "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
-                    (put_template_name,)
+                    "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?", (put_name,)
                 )
-                result = cursor.fetchone()
-                if result:
-                    put_template_id = result[0]
-                else:
-                    logging.error(
-                        f"PUT SPREAD TradeTemplate '{put_template_name}' not found."
-                    )
-                    print(
-                        f"Error: PUT SPREAD TradeTemplate '{put_template_name}' not found."
-                    )
-                    raise ValueError("Missing PUT template.")
+                put_result = cursor.fetchone()
+                if not put_result:
+                    raise ValueError(f"Missing PUT template: {put_name}")
+                put_template_id = put_result[0]
 
-                # Get TradeTemplateID for CALL SPREAD
-                call_template_name = f"CALL SPREAD ({time}) {plan}"
                 cursor = conn.execute(
-                    "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
-                    (call_template_name,)
+                    "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?", (call_name,)
                 )
-                result = cursor.fetchone()
-                if result:
-                    call_template_id = result[0]
-                else:
-                    logging.error(
-                        f"CALL SPREAD TradeTemplate '{call_template_name}' not found."
-                    )
-                    print(
-                        f"Error: CALL SPREAD TradeTemplate '{call_template_name}' not found."
-                    )
-                    raise ValueError("Missing CALL template.")
+                call_result = cursor.fetchone()
+                if not call_result:
+                    raise ValueError(f"Missing CALL template: {call_name}")
+                call_template_id = call_result[0]
 
-                for account in accounts:
-                    schedule_type = "Trade"
+                # Example default strategies
+                put_strategy_key = "EMA520"
+                call_strategy_key = "EMA520_INV"
+                put_trade_condition = trade_condition_ids.get(put_strategy_key)
+                call_trade_condition = trade_condition_ids.get(call_strategy_key)
+                if not put_trade_condition or not call_trade_condition:
+                    raise ValueError("Missing trade conditions for default scheduling.")
 
-                    # Example strategies used in default schedule creation:
-                    put_strategy = 'EMA520'       # or whichever you like
-                    call_strategy = 'EMA520_INV'  # inverse condition
+                display_strategy_put = f"PUT SPREAD {plan}"
+                display_condition_put = put_trade_condition["description"]
+                display_strategy_call = f"CALL SPREAD {plan}"
+                display_condition_call = call_trade_condition["description"]
 
-                    put_trade_condition = trade_condition_ids.get(put_strategy)
-                    call_trade_condition = trade_condition_ids.get(call_strategy)
-                    if not put_trade_condition or not call_trade_condition:
-                        print("Error: Missing trade conditions for default scheduling.")
-                        raise ValueError("Missing trade conditions.")
-
-                    display_strategy_put = f"PUT SPREAD {plan}"
-                    display_condition_put = put_trade_condition["description"]
-
-                    display_strategy_call = f"CALL SPREAD {plan}"
-                    display_condition_call = call_trade_condition["description"]
-
-                    # Insert ScheduleMaster for PUT SPREAD
+                for acct in accounts:
+                    # Insert or confirm schedule for PUT
                     cursor = conn.execute("""
                         SELECT ScheduleMasterID FROM ScheduleMaster
-                        WHERE TradeTemplateID = ? AND Strategy = ? AND Account = ?
-                    """, (put_template_id, put_strategy, account))
+                        WHERE TradeTemplateID=? AND Strategy=? AND Account=?
+                    """, (put_template_id, put_strategy_key, acct))
                     if cursor.fetchone():
-                        logging.info(
-                            f"ScheduleMaster already exists for PUT '{put_template_name}' "
-                            f"with Strategy {put_strategy}, Account {account}"
-                        )
+                        logging.info(f"ScheduleMaster already exists (PUT: {put_name}, {acct})")
                     else:
                         conn.execute("""
                             INSERT INTO ScheduleMaster (
@@ -573,35 +454,27 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
                                 QtyType, QtyAllocation, QtyAllocationMax
                             ) VALUES (
                                 ?, ?, ?, ?,
-                                ?, ?, ?, ?, ?,
-                                ?, ?, ?, ?,
+                                ?, ?, 0, 5, ?,
+                                0, NULL, ?, ?,
                                 ?, ?,
-                                ?, ?, ?, ?, ?, ?,
-                                ?, ?, ?
+                                1,1,1,1,1,0,
+                                'FixedQty', 0.0, 0
                             )
                         """, (
-                            account, put_template_id, schedule_type, 1,
-                            hour, minute, 0, 5, int(active),
-                            0, None, put_strategy, display_strategy_put,
-                            put_trade_condition["id"], display_condition_put,
-                            1, 1, 1, 1, 1, 0,
-                            "FixedQty", 0.0, 0
+                            acct, put_template_id, "Trade", 1,
+                            hour, minute, int(active),
+                            put_strategy_key, display_strategy_put,
+                            put_trade_condition["id"], display_condition_put
                         ))
-                        logging.info(
-                            f"Inserted ScheduleMaster for PUT '{put_template_name}', "
-                            f"Strategy {put_strategy}, Account {account}, IsActive={active}"
-                        )
+                        logging.info(f"Inserted schedule for PUT: {put_name}, {acct}")
 
-                    # Insert ScheduleMaster for CALL SPREAD
+                    # Insert or confirm schedule for CALL
                     cursor = conn.execute("""
                         SELECT ScheduleMasterID FROM ScheduleMaster
-                        WHERE TradeTemplateID = ? AND Strategy = ? AND Account = ?
-                    """, (call_template_id, call_strategy, account))
+                        WHERE TradeTemplateID=? AND Strategy=? AND Account=?
+                    """, (call_template_id, call_strategy_key, acct))
                     if cursor.fetchone():
-                        logging.info(
-                            f"ScheduleMaster already exists for CALL '{call_template_name}' "
-                            f"with Strategy {call_strategy}, Account {account}"
-                        )
+                        logging.info(f"ScheduleMaster already exists (CALL: {call_name}, {acct})")
                     else:
                         conn.execute("""
                             INSERT INTO ScheduleMaster (
@@ -613,138 +486,111 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
                                 QtyType, QtyAllocation, QtyAllocationMax
                             ) VALUES (
                                 ?, ?, ?, ?,
-                                ?, ?, ?, ?, ?,
-                                ?, ?, ?, ?,
+                                ?, ?, 0, 5, ?,
+                                0, NULL, ?, ?,
                                 ?, ?,
-                                ?, ?, ?, ?, ?, ?,
-                                ?, ?, ?
+                                1,1,1,1,1,0,
+                                'FixedQty', 0.0, 0
                             )
                         """, (
-                            account, call_template_id, schedule_type, 1,
-                            hour, minute, 0, 5, int(active),
-                            0, None, call_strategy, display_strategy_call,
-                            call_trade_condition["id"], display_condition_call,
-                            1, 1, 1, 1, 1, 0,
-                            "FixedQty", 0.0, 0
+                            acct, call_template_id, "Trade", 1,
+                            hour, minute, int(active),
+                            call_strategy_key, display_strategy_call,
+                            call_trade_condition["id"], display_condition_call
                         ))
-                        logging.info(
-                            f"Inserted ScheduleMaster for CALL '{call_template_name}', "
-                            f"Strategy {call_strategy}, Account {account}, IsActive={active}"
-                        )
+                        logging.info(f"Inserted schedule for CALL: {call_name}, {acct}")
 
         logging.info("ScheduleMaster entries created or updated successfully.")
     except sqlite3.Error as e:
-        logging.error(f"Error inserting ScheduleMaster entries: {str(e)}")
+        logging.error(f"Error inserting/updating Schedules: {str(e)}")
         raise
 
 
-def verify_put_update(conn, trade_template_id, expected_target_max, expected_long_width, expected_stop_multiple):
+def verify_put_update(conn, template_id, expected_target_max, expected_long_width, expected_stop_multiple):
     """
-    Verify that the PUT Spread TradeTemplate has been updated correctly.
+    Verify that a PUT spread template was updated as expected.
     """
     try:
-        cursor = conn.execute("""
+        c = conn.execute("""
             SELECT TargetMax, LongWidth, StopMultiple FROM TradeTemplate
             WHERE TradeTemplateID = ?
-        """, (trade_template_id,))
-        result = cursor.fetchone()
-        if result:
-            actual_target_max, actual_long_width, actual_stop_multiple = result
-            if (actual_target_max == expected_target_max and
-                actual_long_width == expected_long_width and
-                actual_stop_multiple == expected_stop_multiple):
-                logging.info(f"Verification SUCCESS for PUT TradeTemplateID {trade_template_id}.")
-                return True
-            else:
-                logging.error(f"Verification FAILED for PUT TradeTemplateID {trade_template_id}:")
-                logging.error(f"  Expected TargetMax={expected_target_max}, Got {actual_target_max}")
-                logging.error(f"  Expected LongWidth='{expected_long_width}', Got '{actual_long_width}'")
-                logging.error(f"  Expected StopMultiple={expected_stop_multiple}, Got {actual_stop_multiple}")
-                return False
+        """, (template_id,))
+        row = c.fetchone()
+        if not row:
+            logging.error(f"PUT template {template_id} not found for verification.")
+            return False
+        actual_max, actual_width, actual_stop = row
+        if (actual_max == expected_target_max and
+            actual_width == expected_long_width and
+            actual_stop == expected_stop_multiple):
+            logging.info(f"PUT verify OK (ID {template_id})")
+            return True
         else:
-            logging.error(f"Verification FAILED: TradeTemplateID {trade_template_id} not found.")
+            logging.error(f"PUT verify FAILED (ID {template_id}) - got {row}")
             return False
     except sqlite3.Error as e:
-        logging.error(f"Error during PUT verification: {str(e)}")
+        logging.error(f"PUT verification error: {str(e)}")
         return False
 
 
-def verify_call_update(conn, trade_template_id, expected_target_max_call, expected_long_width, expected_stop_multiple):
+def verify_call_update(conn, template_id, expected_target_max_call, expected_long_width, expected_stop_multiple):
     """
-    Verify that the CALL Spread TradeTemplate has been updated correctly.
+    Verify that a CALL spread template was updated as expected.
     """
     try:
-        cursor = conn.execute("""
+        c = conn.execute("""
             SELECT TargetMaxCall, LongWidth, StopMultiple FROM TradeTemplate
             WHERE TradeTemplateID = ?
-        """, (trade_template_id,))
-        result = cursor.fetchone()
-        if result:
-            actual_target_max_call, actual_long_width, actual_stop_multiple = result
-            if (actual_target_max_call == expected_target_max_call and
-                actual_long_width == expected_long_width and
-                actual_stop_multiple == expected_stop_multiple):
-                logging.info(f"Verification SUCCESS for CALL TradeTemplateID {trade_template_id}.")
-                return True
-            else:
-                logging.error(f"Verification FAILED for CALL TradeTemplateID {trade_template_id}:")
-                logging.error(f"  Expected TargetMaxCall={expected_target_max_call}, Got {actual_target_max_call}")
-                logging.error(f"  Expected LongWidth='{expected_long_width}', Got '{actual_long_width}'")
-                logging.error(f"  Expected StopMultiple={expected_stop_multiple}, Got {actual_stop_multiple}")
-                return False
+        """, (template_id,))
+        row = c.fetchone()
+        if not row:
+            logging.error(f"CALL template {template_id} not found for verification.")
+            return False
+        actual_call_max, actual_width, actual_stop = row
+        if (actual_call_max == expected_target_max_call and
+            actual_width == expected_long_width and
+            actual_stop == expected_stop_multiple):
+            logging.info(f"CALL verify OK (ID {template_id})")
+            return True
         else:
-            logging.error(f"Verification FAILED: TradeTemplateID {trade_template_id} not found.")
+            logging.error(f"CALL verify FAILED (ID {template_id}) - got {row}")
             return False
     except sqlite3.Error as e:
-        logging.error(f"Error during CALL verification: {str(e)}")
+        logging.error(f"CALL verification error: {str(e)}")
         return False
 
 
 def initialize_database(conn, plan_count, force, accounts, times):
     """
-    Initialize the database with TradeConditions, TradeTemplates, and ScheduleMaster entries.
-    If force is True, it deletes existing entries and creates schedules as inactive.
-    Otherwise, it inserts missing entries without deleting.
-
-    Args:
-        conn (sqlite3.Connection): SQLite database connection object.
-        plan_count (int): Number of plans to initialize.
-        force (bool): Whether to force initialize by deleting existing entries.
-        accounts (list): List of account IDs.
-        times (list): List of times for trade entries.
+    (Optional) Wipe out existing data or just fill missing. Then create conditions, templates, schedules.
     """
     try:
+        # Start transaction
         conn.execute("BEGIN TRANSACTION")
         if force:
-            # Clear existing records in relevant tables
             conn.execute("DELETE FROM TradeTemplate")
             conn.execute("DELETE FROM ScheduleMaster")
             conn.execute("DELETE FROM TradeConditionDetail")
             conn.execute("DELETE FROM TradeCondition")
             logging.info("Cleared existing TradeTemplates, Schedules, and TradeConditions.")
 
-            # Reset the TradeCondition sequence if using AUTOINCREMENT
             try:
+                # If using AUTOINCREMENT
                 conn.execute("DELETE FROM sqlite_sequence WHERE name='TradeCondition'")
                 logging.info("Reset TradeCondition ID sequence.")
             except sqlite3.Error as e:
-                logging.warning(
-                    f"Could not reset TradeCondition ID sequence. {str(e)}"
-                )
+                logging.warning(f"Could not reset TradeCondition ID sequence. {str(e)}")
         else:
-            logging.info(
-                "Initializing database by inserting missing TradeConditions, "
-                "TradeTemplates, and ScheduleMaster entries."
-            )
+            logging.info("Inserting missing data (TradeConditions, TradeTemplates, Schedules).")
 
-        # Create EMA conditions and get their IDs
+        # Create default trade conditions
         trade_condition_ids = create_trade_conditions(conn)
 
-        # Initialize TradeTemplates
+        # Create templates for P1..P(plan_count)
         plan_suffixes = [f"P{i}" for i in range(1, plan_count + 1)]
         create_trade_templates(conn, plan_suffixes, times)
 
-        # Create Schedules
+        # Create schedules (inactive if force is True)
         if force:
             if not accounts:
                 logging.error("No accounts provided for force-initialize.")
@@ -752,349 +598,236 @@ def initialize_database(conn, plan_count, force, accounts, times):
                 conn.rollback()
                 conn.close()
                 sys.exit(1)
-            create_schedules(
-                conn,
-                plan_suffixes,
-                trade_condition_ids,
-                accounts,
-                times,
-                active=False
-            )
+            create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, active=False)
 
+        # Commit
         conn.commit()
+
         if force:
-            logging.info(
-                f"Initialized database with TradeTemplates for plans P1 to P{plan_count}, "
-                f"and associated Schedules as inactive."
-            )
-            print(
-                f"Initialized database with TradeTemplates for plans P1 to P{plan_count}, "
-                f"and associated Schedules as inactive."
-            )
+            logging.info(f"Initialized DB with P1..P{plan_count} (Schedules inactive).")
+            print(f"Initialized DB with P1..P{plan_count}, schedules inactive.")
         else:
-            logging.info("Inserted missing TradeTemplates and ScheduleMaster entries.")
-            print("Inserted missing TradeTemplates and ScheduleMaster entries.")
+            logging.info(f"Inserted missing templates and schedules for P1..P{plan_count}.")
+            print(f"Inserted missing templates and schedules for P1..P{plan_count}.")
 
     except sqlite3.Error as e:
-        logging.error(f"Error occurred during initialization: {str(e)}")
+        logging.error(f"Error in initialize_database: {str(e)}")
         conn.rollback()
         conn.close()
         sys.exit(1)
 
 
-#
-# Helper functions for PUT/CALL updates (used in process_tradeplan)
-#
-
 def update_put_template(conn, template_name, premium, spread, stop_multiple):
     """
-    Update the PUT template (TargetMax, LongWidth, StopMultiple), then verify.
+    Update PUT template, then verify.
     """
-    cursor = conn.execute(
-        "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
-        (template_name,)
-    )
-    result = cursor.fetchone()
-    if not result:
-        logging.warning(f"PUT TradeTemplate '{template_name}' not found.")
-        print(f"WARNING: PUT TradeTemplate '{template_name}' not found.")
+    cur = conn.execute("SELECT TradeTemplateID FROM TradeTemplate WHERE Name=?", (template_name,))
+    row = cur.fetchone()
+    if not row:
         raise ValueError(f"Missing PUT template {template_name}")
+    template_id = row[0]
 
-    template_id = result[0]
     conn.execute("""
         UPDATE TradeTemplate
-        SET TargetMax = ?, LongWidth = ?, StopMultiple = ?
-        WHERE TradeTemplateID = ?
+        SET TargetMax=?, LongWidth=?, StopMultiple=?
+        WHERE TradeTemplateID=?
     """, (premium, spread, stop_multiple, template_id))
-    logging.info(f"Updated PUT TradeTemplate '{template_name}'.")
-    print(f"Updated PUT TradeTemplate '{template_name}'.")
 
     # Verify
-    passed = verify_put_update(
-        conn,
-        template_id,
-        expected_target_max=premium,
-        expected_long_width=spread,
-        expected_stop_multiple=stop_multiple
-    )
-    if passed:
-        logging.info(f"Verification SUCCESS for PUT '{template_name}'.")
-        print(f"Verification SUCCESS for PUT '{template_name}'.")
+    if verify_put_update(conn, template_id, premium, spread, stop_multiple):
+        logging.info(f"Updated and verified PUT template '{template_name}'.")
     else:
-        raise ValueError(f"Verification FAILED for PUT '{template_name}'.")
+        raise ValueError(f"Verification failed for PUT '{template_name}'.")
 
 
 def update_call_template(conn, template_name, premium, spread, stop_multiple):
     """
-    Update the CALL template (TargetMaxCall, LongWidth, StopMultiple), then verify.
+    Update CALL template, then verify.
     """
-    cursor = conn.execute(
-        "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
-        (template_name,)
-    )
-    result = cursor.fetchone()
-    if not result:
-        logging.warning(f"CALL TradeTemplate '{template_name}' not found.")
-        print(f"WARNING: CALL TradeTemplate '{template_name}' not found.")
+    cur = conn.execute("SELECT TradeTemplateID FROM TradeTemplate WHERE Name=?", (template_name,))
+    row = cur.fetchone()
+    if not row:
         raise ValueError(f"Missing CALL template {template_name}")
+    template_id = row[0]
 
-    template_id = result[0]
     conn.execute("""
         UPDATE TradeTemplate
-        SET TargetMaxCall = ?, LongWidth = ?, StopMultiple = ?
-        WHERE TradeTemplateID = ?
+        SET TargetMaxCall=?, LongWidth=?, StopMultiple=?
+        WHERE TradeTemplateID=?
     """, (premium, spread, stop_multiple, template_id))
-    logging.info(f"Updated CALL TradeTemplate '{template_name}'.")
-    print(f"Updated CALL TradeTemplate '{template_name}'.")
 
     # Verify
-    passed = verify_call_update(
-        conn,
-        template_id,
-        expected_target_max_call=premium,
-        expected_long_width=spread,
-        expected_stop_multiple=stop_multiple
-    )
-    if passed:
-        logging.info(f"Verification SUCCESS for CALL '{template_name}'.")
-        print(f"Verification SUCCESS for CALL '{template_name}'.")
+    if verify_call_update(conn, template_id, premium, spread, stop_multiple):
+        logging.info(f"Updated and verified CALL template '{template_name}'.")
     else:
-        raise ValueError(f"Verification FAILED for CALL '{template_name}'.")
+        raise ValueError(f"Verification failed for CALL '{template_name}'.")
 
 
 def update_put_schedule_master(conn, template_name, qty_override, ema_strategy,
                                condition_id, condition_desc, plan):
     """
-    Update the ScheduleMaster for PUT template (IsActive=1, QtyOverride, strategy, etc.)
+    Activate and set up the PUT schedule.
     """
-    cursor = conn.execute(
-        "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
-        (template_name,)
-    )
-    result = cursor.fetchone()
-    if not result:
-        raise ValueError(f"Missing PUT TradeTemplate for schedule: {template_name}")
+    cur = conn.execute("SELECT TradeTemplateID FROM TradeTemplate WHERE Name=?", (template_name,))
+    row = cur.fetchone()
+    if not row:
+        raise ValueError(f"Missing PUT template for schedule: {template_name}")
+    template_id = row[0]
 
-    template_id = result[0]
     conn.execute("""
         UPDATE ScheduleMaster
-        SET IsActive = 1, QtyOverride = ?, Strategy = ?, 
-            TradeConditionID = ?, DisplayStrategy = ?, 
-            DisplayCondition = ?
-        WHERE TradeTemplateID = ?
+        SET IsActive=1, QtyOverride=?, Strategy=?,
+            TradeConditionID=?, DisplayStrategy=?,
+            DisplayCondition=?
+        WHERE TradeTemplateID=?
     """, (
-        qty_override, ema_strategy, condition_id,
-        f"PUT SPREAD {plan}", condition_desc, template_id
+        qty_override, ema_strategy,
+        condition_id, f"PUT SPREAD {plan}",
+        condition_desc, template_id
     ))
     logging.info(f"Updated ScheduleMaster for PUT '{template_name}'.")
-    print(f"Updated ScheduleMaster for PUT '{template_name}'.")
 
 
 def update_call_schedule_master(conn, template_name, qty_override, ema_strategy,
                                 condition_id, condition_desc, plan):
     """
-    Update the ScheduleMaster for CALL template (IsActive=1, QtyOverride, strategy, etc.)
+    Activate and set up the CALL schedule.
     """
-    cursor = conn.execute(
-        "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
-        (template_name,)
-    )
-    result = cursor.fetchone()
-    if not result:
-        raise ValueError(f"Missing CALL TradeTemplate for schedule: {template_name}")
+    cur = conn.execute("SELECT TradeTemplateID FROM TradeTemplate WHERE Name=?", (template_name,))
+    row = cur.fetchone()
+    if not row:
+        raise ValueError(f"Missing CALL template for schedule: {template_name}")
+    template_id = row[0]
 
-    template_id = result[0]
     conn.execute("""
         UPDATE ScheduleMaster
-        SET IsActive = 1, QtyOverride = ?, Strategy = ?, 
-            TradeConditionID = ?, DisplayStrategy = ?, 
-            DisplayCondition = ?
-        WHERE TradeTemplateID = ?
+        SET IsActive=1, QtyOverride=?, Strategy=?,
+            TradeConditionID=?, DisplayStrategy=?,
+            DisplayCondition=?
+        WHERE TradeTemplateID=?
     """, (
-        qty_override, ema_strategy, condition_id,
-        f"CALL SPREAD {plan}", condition_desc, template_id
+        qty_override, ema_strategy,
+        condition_id, f"CALL SPREAD {plan}",
+        condition_desc, template_id
     ))
     logging.info(f"Updated ScheduleMaster for CALL '{template_name}'.")
-    print(f"Updated ScheduleMaster for CALL '{template_name}'.")
 
 
 def process_tradeplan(conn, data, trade_condition_ids):
     """
-    Process the tradeplan.csv and update TradeTemplates and ScheduleMaster accordingly,
-    handling both CSV types:
-      1) With 'OptionType' column -> Update only PUT or CALL per row
-      2) Without 'OptionType' column -> Update both PUT and CALL for each row
+    Reads the tradeplan.csv content (in 'data'), then updates templates & schedules.
+    This function does a single BEGIN TRANSACTION for all rows, committing at the end.
     """
-    # 1) Normalize Plan
-    if "Plan" in data.columns:
-        data['Plan'] = data['Plan'].str.upper()
-    else:
-        data['Plan'] = 'P1'
-
-    # 2) Check if OptionType is in the CSV
+    # Check if there's an OptionType column
     has_option_type = ("OptionType" in data.columns)
 
-    # 3) Validate strategies
+    # Ensure strategies exist in trade_condition_ids
     required_conditions = set()
     for strategy in data['Strategy'].unique():
-        strategy_upper = strategy.upper()
-        if strategy_upper in ["EMA520", "EMA540", "EMA2040"]:
-            required_conditions.add(strategy_upper)
-            required_conditions.add(f"{strategy_upper}_INV")
+        s_up = strategy.upper()
+        if s_up in ["EMA520", "EMA540", "EMA2040"]:
+            required_conditions.add(s_up)
+            required_conditions.add(s_up + "_INV")
         else:
             logging.error(f"Unsupported Strategy '{strategy}'.")
             print(f"Error: Unsupported Strategy '{strategy}'.")
-            conn.close()
             sys.exit(1)
 
-    missing_conditions = required_conditions - set(trade_condition_ids.keys())
-    if missing_conditions:
-        missing_str = ', '.join(missing_conditions)
-        logging.warning(f"Missing TradeConditionIDs for: {missing_str}")
-        print(
-            f"\nWARNING: Missing TradeConditionIDs for strategies: {missing_str}"
-        )
-        conn.close()
+    missing = required_conditions - set(trade_condition_ids.keys())
+    if missing:
+        print(f"Error: Missing conditions {missing}.")
         sys.exit(1)
 
     try:
+        # Start transaction
         conn.execute("BEGIN TRANSACTION")
 
-        # Iterate CSV
         for idx, row in data.iterrows():
-            plan = row['Plan']
-            hour_minute = row['Hour:Minute']
-            ema_strategy = row['Strategy'].upper()
+            plan = str(row.get('Plan', 'P1')).upper()  # default P1 if missing
+            hour_minute = str(row['Hour:Minute']).strip()
+            ema_strat = str(row['Strategy']).upper()
 
             premium = float(row['Premium'])
             spread = str(row['Spread']).replace('-', ',')
-            stop_str = str(row['Stop'])
-            if stop_str.lower().endswith('x'):
-                stop_multiple = float(stop_str[:-1])
+            stop_s = str(row['Stop'])
+            if stop_s.lower().endswith('x'):
+                stop_multiple = float(stop_s[:-1])
             else:
-                stop_multiple = float(stop_str)
+                stop_multiple = float(stop_s)
 
-            qty_override = int(row['Qty'])
+            qty = int(row['Qty'])
 
-            # Condition ID selection
-            if ema_strategy == "EMA520":
+            # Condition IDs
+            if ema_strat == "EMA520":
                 cond_id_put = trade_condition_ids["EMA520"]["id"]
-                cond_name_put = trade_condition_ids["EMA520"]["description"]
+                cond_desc_put = trade_condition_ids["EMA520"]["description"]
                 cond_id_call = trade_condition_ids["EMA520_INV"]["id"]
-                cond_name_call = trade_condition_ids["EMA520_INV"]["description"]
-            elif ema_strategy == "EMA540":
+                cond_desc_call = trade_condition_ids["EMA520_INV"]["description"]
+            elif ema_strat == "EMA540":
                 cond_id_put = trade_condition_ids["EMA540"]["id"]
-                cond_name_put = trade_condition_ids["EMA540"]["description"]
+                cond_desc_put = trade_condition_ids["EMA540"]["description"]
                 cond_id_call = trade_condition_ids["EMA540_INV"]["id"]
-                cond_name_call = trade_condition_ids["EMA540_INV"]["description"]
-            elif ema_strategy == "EMA2040":
+                cond_desc_call = trade_condition_ids["EMA540_INV"]["description"]
+            elif ema_strat == "EMA2040":
                 cond_id_put = trade_condition_ids["EMA2040"]["id"]
-                cond_name_put = trade_condition_ids["EMA2040"]["description"]
+                cond_desc_put = trade_condition_ids["EMA2040"]["description"]
                 cond_id_call = trade_condition_ids["EMA2040_INV"]["id"]
-                cond_name_call = trade_condition_ids["EMA2040_INV"]["description"]
+                cond_desc_call = trade_condition_ids["EMA2040_INV"]["description"]
             else:
-                logging.error(f"Unknown Strategy '{ema_strategy}' at row {idx + 1}.")
-                print(f"Error: Unknown Strategy '{ema_strategy}' at row {idx + 1}.")
-                conn.rollback()
-                conn.close()
-                sys.exit(1)
+                # Should never happen if we validated earlier
+                raise ValueError(f"Unknown strategy {ema_strat}")
 
-            # ============ Branch based on OptionType presence ============
+            put_template_name = f"PUT SPREAD ({hour_minute}) {plan}"
+            call_template_name = f"CALL SPREAD ({hour_minute}) {plan}"
+
             if has_option_type:
-                # We have OptionType in the CSV
-                option_type = str(row['OptionType']).strip().upper()
-                if option_type == 'P':
+                opt_type = str(row['OptionType']).upper()
+                if opt_type == 'P':
                     # Update PUT only
-                    put_template_name = f"PUT SPREAD ({hour_minute}) {plan}"
                     update_put_template(conn, put_template_name, premium, spread, stop_multiple)
-                    update_put_schedule_master(
-                        conn,
-                        put_template_name,
-                        qty_override,
-                        ema_strategy,
-                        cond_id_put,
-                        cond_name_put,
-                        plan
-                    )
-                elif option_type == 'C':
+                    update_put_schedule_master(conn, put_template_name, qty,
+                                               ema_strat, cond_id_put, cond_desc_put, plan)
+                elif opt_type == 'C':
                     # Update CALL only
-                    call_template_name = f"CALL SPREAD ({hour_minute}) {plan}"
                     update_call_template(conn, call_template_name, premium, spread, stop_multiple)
-                    update_call_schedule_master(
-                        conn,
-                        call_template_name,
-                        qty_override,
-                        ema_strategy + "_INV",
-                        cond_id_call,
-                        cond_name_call,
-                        plan
-                    )
+                    update_call_schedule_master(conn, call_template_name, qty,
+                                                ema_strat + "_INV", cond_id_call, cond_desc_call, plan)
                 else:
-                    logging.error(f"Invalid OptionType '{option_type}' at row {idx + 1}.")
-                    print(f"Error: Invalid OptionType '{option_type}' at row {idx + 1}.")
+                    logging.error(f"Invalid OptionType '{opt_type}' at row {idx+1}")
+                    print(f"Error: Invalid OptionType '{opt_type}' at row {idx+1}.")
                     conn.rollback()
-                    conn.close()
                     sys.exit(1)
-
             else:
-                # No OptionType in CSV -> Legacy approach: update both PUT and CALL
-                put_template_name = f"PUT SPREAD ({hour_minute}) {plan}"
+                # Legacy path: update both
                 update_put_template(conn, put_template_name, premium, spread, stop_multiple)
-                update_put_schedule_master(
-                    conn,
-                    put_template_name,
-                    qty_override,
-                    ema_strategy,
-                    cond_id_put,
-                    cond_name_put,
-                    plan
-                )
-
-                call_template_name = f"CALL SPREAD ({hour_minute}) {plan}"
+                update_put_schedule_master(conn, put_template_name, qty,
+                                           ema_strat, cond_id_put, cond_desc_put, plan)
                 update_call_template(conn, call_template_name, premium, spread, stop_multiple)
-                update_call_schedule_master(
-                    conn,
-                    call_template_name,
-                    qty_override,
-                    ema_strategy + "_INV",
-                    cond_id_call,
-                    cond_name_call,
-                    plan
-                )
+                update_call_schedule_master(conn, call_template_name, qty,
+                                            ema_strat + "_INV", cond_id_call, cond_desc_call, plan)
 
-        # End of CSV loop
+        # Commit
         conn.commit()
-        logging.info("\nTradeTemplates and ScheduleMaster entries updated successfully.")
-        print("\nTradeTemplates and ScheduleMaster entries updated successfully.")
+        logging.info("TradeTemplates and ScheduleMaster updated successfully.")
+        print("TradeTemplates and ScheduleMaster updated successfully.\n")
 
-    except sqlite3.Error as e:
+    except (sqlite3.Error, ValueError) as e:
         logging.error(f"Error occurred while processing tradeplan: {str(e)}")
         conn.rollback()
-        conn.close()
-        sys.exit(1)
-    except ValueError as ve:
-        logging.error(f"Error: {str(ve)}")
-        print(f"Error: {str(ve)}")
-        conn.rollback()
-        conn.close()
+        print(f"Error: {str(e)}")
         sys.exit(1)
 
 
 def main():
-    """
-    Main function to execute the script logic.
-    """
     args = parse_arguments()
     setup_logging()
 
     # Paths
-    db_path = 'data.db3'
-    db_path = os.path.abspath(db_path)
-    csv_path = 'tradeplan.csv'
+    db_path = os.path.abspath("data.db3")
+    csv_path = "tradeplan.csv"
 
-    # Backup directory
-    backup_dir = 'tradeplan-backup'
-    backup_dir_path = os.path.abspath(backup_dir)
+    # Prepare backup directory
+    backup_dir_path = os.path.abspath("tradeplan-backup")
     if not os.path.exists(backup_dir_path):
         try:
             os.makedirs(backup_dir_path)
@@ -1105,13 +838,13 @@ def main():
             print(f"Error: Unable to create backup directory. {str(e)}")
             sys.exit(1)
 
-    # Create a backup of the database
+    # Create backup
     backup_filepath = create_backup(db_path, backup_dir_path)
 
-    # Connect to the database
+    # Connect DB
     conn = connect_database(db_path)
 
-    # Define the times for trade entries
+    # Times
     times = [
         "09:33", "09:45", "10:00", "10:15", "10:30", "10:45", "11:00",
         "11:15", "11:30", "11:45", "12:00", "12:15", "12:30", "12:45",
@@ -1119,44 +852,44 @@ def main():
         "14:45", "15:00", "15:15", "15:30", "15:45"
     ]
 
-    # Handle force-initialize
+    # Handle --force-initialize
     if args.force_initialize is not None:
         if args.force_initialize == -1:
             try:
-                plan_count_input = input("Enter the number of plans to initialize: ").strip()
-                plan_count = int(plan_count_input)
+                user_input = input("Enter the number of plans to initialize: ").strip()
+                plan_count = int(user_input)
                 if plan_count < 1:
                     raise ValueError("Plan count must be at least 1.")
-            except ValueError as ve:
-                logging.error(f"Invalid plan count input: {ve}")
-                print(f"Error: {ve}")
+            except ValueError as e:
+                logging.error(f"Invalid plan count: {e}")
+                print(f"Error: {e}")
                 conn.close()
                 sys.exit(1)
         else:
             plan_count = args.force_initialize
 
-        # Prompt user for Account IDs
-        print("Force initializing the database. Please provide Account IDs.")
+        print("Force initializing the database. Provide up to 3 IB account IDs.")
         accounts = get_accounts()
 
         initialize_database(conn, plan_count, force=True, accounts=accounts, times=times)
         conn.close()
         sys.exit(0)
 
-    # Handle normal initialize
+    # Handle --initialize
     if args.initialize:
-        plan_count = 1
+        plan_count = 1  # or any default you like
         initialize_database(conn, plan_count, force=False, accounts=[], times=times)
         conn.close()
         sys.exit(0)
 
-    # Read the CSV file
+    # Read CSV
     try:
         data = pd.read_csv(csv_path, delimiter=',', quotechar='"')
-        logging.info(f"Loaded tradeplan.csv with {len(data)} entries.")
+        logging.info(f"Loaded {csv_path} with {len(data)} entries.")
+        print(f"Loaded {csv_path} with {len(data)} entries.")
     except FileNotFoundError:
-        logging.error("CSV file not found. Please check the file path.")
-        print("Error: CSV file not found. Please check the file path.")
+        logging.error("CSV file not found.")
+        print("Error: CSV file not found.")
         conn.close()
         sys.exit(1)
     except pd.errors.EmptyDataError:
@@ -1165,79 +898,77 @@ def main():
         conn.close()
         sys.exit(1)
     except pd.errors.ParserError as e:
-        logging.error(f"Error parsing CSV file: {str(e)}")
-        print(f"Error parsing CSV file: {str(e)}")
+        logging.error(f"Error parsing CSV: {str(e)}")
+        print(f"Error parsing CSV: {str(e)}")
         conn.close()
         sys.exit(1)
 
-    # Possibly override or set Qty
+    # Possibly override or ensure 'Qty' column
     if args.qty is not None:
         data['Qty'] = args.qty
         logging.info(f"Set Qty for all entries to {args.qty}.")
         print(f"Set Qty for all entries to {args.qty}.")
     elif 'Qty' not in data.columns or data['Qty'].isna().all():
         data['Qty'] = 1
-        logging.info("Set Qty for all entries to default value 1.")
-        print("Set Qty for all entries to default value 1.")
+        logging.info("Set Qty to 1 by default.")
+        print("Set Qty to 1 by default.")
     else:
-        print("Using existing 'Qty' column from CSV.")
         logging.info("Using existing 'Qty' column from CSV.")
+        print("Using existing 'Qty' column from CSV.")
 
-    # If --distribution, do PnL Rank adjustments
+    # --distribution => adjust Qty for top/bottom ranks
     if args.distribution:
         if 'PnL Rank' not in data.columns:
-            logging.error("Missing 'PnL Rank' column in CSV. Cannot distribute contracts.")
-            print("Error: 'PnL Rank' column is missing. Cannot distribute contracts.")
+            logging.error("Missing 'PnL Rank' column. Cannot distribute.")
+            print("Error: Missing 'PnL Rank' column. Cannot distribute.")
             conn.close()
             sys.exit(1)
         data = data.sort_values('PnL Rank')
         data['Qty'] = data['Qty'].fillna(0)
         top_n = 3
         data.loc[data.index[:top_n], 'Qty'] += 1
-        logging.info(f"Added 1 to Qty for top {top_n} PnL Rank entries.")
-        print(f"Added 1 to Qty for top {top_n} PnL Rank entries.")
-
+        logging.info(f"Distributed +1 Qty to top {top_n} rows by PnL Rank.")
+        print(f"Distributed +1 Qty to top {top_n} rows.")
         if len(data) >= 10:
             data.loc[data.index[7:10], 'Qty'] -= 1
-            logging.info("Subtracted 1 from Qty for PnL Rank entries 8-10.")
-            print("Subtracted 1 from Qty for PnL Rank entries 8-10.")
+            logging.info("Subtracted 1 from Qty for rank entries 8-10.")
+            print("Subtracted 1 from Qty for rank entries 8-10.")
 
-    # Replace dashes with commas in 'Spread', if present
+    # If there's a Spread column, replace dashes
     if 'Spread' in data.columns:
         data['Spread'] = data['Spread'].astype(str).str.replace('-', ',', regex=False)
         logging.info("Replaced dashes with commas in 'Spread' column.")
         print("Replaced dashes with commas in 'Spread' column.")
 
-    # Save the updated CSV back
+    # Save updated CSV
     try:
         data.to_csv(csv_path, index=False)
         logging.info("Updated tradeplan.csv saved.")
         print("Updated tradeplan.csv saved.")
     except Exception as e:
-        logging.error(f"Error saving updated CSV: {str(e)}")
-        print(f"Error saving updated CSV: {str(e)}")
+        logging.error(f"Error saving CSV: {str(e)}")
+        print(f"Error saving CSV: {str(e)}")
         conn.close()
         sys.exit(1)
 
-    # Deactivate all schedules
+    # Deactivate all schedules before we re-activate them from CSV
     try:
         conn.execute("BEGIN TRANSACTION")
-        conn.execute("UPDATE ScheduleMaster SET IsActive = 0")
+        conn.execute("UPDATE ScheduleMaster SET IsActive=0")
         conn.commit()
         logging.info("All schedules deactivated.")
         print("All schedules deactivated.")
     except sqlite3.Error as e:
-        logging.error(f"Error occurred while deactivating schedules: {str(e)}")
-        print(f"Error occurred while deactivating schedules: {str(e)}")
+        logging.error(f"Error deactivating schedules: {str(e)}")
+        print(f"Error deactivating schedules: {str(e)}")
         conn.rollback()
         conn.close()
         sys.exit(1)
 
-    # Create or ensure we have trade conditions
-    # (this does not begin its own transaction anymore)
+    # Create or ensure trade conditions exist (no transaction here)
     trade_condition_ids = create_trade_conditions(conn)
 
-    # Now update templates & schedules from CSV
+    # Now process the CSV updates (this function does BEGIN/COMMIT)
     process_tradeplan(conn, data, trade_condition_ids)
 
     # Close DB
@@ -1245,9 +976,9 @@ def main():
         conn.close()
         logging.info("Database connection closed.")
     except sqlite3.Error as e:
-        logging.error(f"Error occurred while closing the database: {str(e)}")
+        logging.error(f"Error closing DB: {str(e)}")
 
-    # Remove unzipped backup file
+    # Remove the unzipped backup
     try:
         os.remove(backup_filepath)
         logging.info(f"Removed unzipped backup file: {backup_filepath}")
@@ -1258,7 +989,7 @@ def main():
 
     logging.info("Script executed successfully.")
     print("Script executed successfully.\n")
-    print("Final tradeplan.csv:")
+    print("Final tradeplan.csv content:")
     print(data.to_csv(index=False))
 
 
