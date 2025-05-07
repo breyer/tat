@@ -144,8 +144,8 @@ def login_to_tat(email, password):
     
     logging.info("Window successfully activated.")
 
-    # 1. Press TAB 3 times to reach the email field
-    for _ in range(3):
+    # 1. Press TAB 4 times to reach the email field
+    for _ in range(4):
         pyautogui.press('tab')
         time.sleep(0.5)  # Small delay for each TAB
 
