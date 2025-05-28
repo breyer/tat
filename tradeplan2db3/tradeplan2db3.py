@@ -270,7 +270,7 @@ def create_trade_templates(conn, plan_suffixes, times):
                     "LongMaxPremium": None,
                     "QtyDefault": 1,
                     "FillAttempts": 5,
-                    "FillWait": 10,
+                    "FillWait": 15,
                     "FillAdjustment": 0.05,
                     "StopType": "Vertical",
                     "StopMultiple": 1.25,
