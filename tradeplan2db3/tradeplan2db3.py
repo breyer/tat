@@ -283,8 +283,8 @@ def create_trade_templates(conn, plan_suffixes, times):
                     "StopLimitOffset": None,
                     "StopLimitMarketOffset": None,
                     "OrderIDProfitTarget": "None", # Default, updated if profit target is set
-                    "ProfitTargetType": None,     # Default, updated by process_tradeplan
-                    "ProfitTarget": None,         # Default, updated by process_tradeplan
+                    "ProfitTargetType": None,      # Default, updated by process_tradeplan
+                    "ProfitTarget": None,          # Default, updated by process_tradeplan
                     "Adjustment1Type": "Stop Multiple",
                     "Adjustment1": None,
                     "Adjustment1ChangeType": "None",
@@ -342,10 +342,10 @@ def create_trade_templates(conn, plan_suffixes, times):
                     "ExitDTE": 0,
                     "ExtendedHourStop": 0,
                     "TargetTypeCall": "Credit", # Specific to CALL, but part of the table structure
-                    "TargetMinCall": 1.0,    # Specific to CALL
-                    "TargetMaxCall": 4.0,    # Specific to CALL, will be updated
+                    "TargetMinCall": 1.0,      # Specific to CALL
+                    "TargetMaxCall": 4.0,      # Specific to CALL, will be updated
                     "PreferenceCall": "Highest Credit/Delta", # Specific to CALL
-                    "MinOTMCall": 0.0,       # Specific to CALL
+                    "MinOTMCall": 0.0,         # Specific to CALL
                     "ExitOrderLimit": 0,
                     "PutRatio": 1,
                     "CallRatio": 1,
@@ -461,7 +461,7 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
                 )
                 row = cursor.fetchone()
                 if not row:
-                     # This case should ideally not happen
+                    # This case should ideally not happen
                     logging.error(f"Missing CALL template '{call_name}' during schedule creation. Skipping.")
                     continue
                 call_template_id = row[0]
@@ -597,7 +597,7 @@ def verify_call_update(conn, trade_template_id, expected_target_max_call, expect
         row = cursor.fetchone()
         if row:
             actual_tmax_call, actual_lwidth, actual_stop_mult = row
-             # Handle potential None values
+            # Handle potential None values
             actual_tmax_call = actual_tmax_call if actual_tmax_call is not None else 0.0
             actual_stop_mult = actual_stop_mult if actual_stop_mult is not None else 0.0
 
@@ -876,8 +876,15 @@ def process_tradeplan(conn, data, trade_condition_ids):
 
             # Profit Target from CSV (already converted to numeric/NaN in main)
             profit_target_csv_value = row.get('profittarget') # This will be float or NaN
-            if pd.isna(profit_target_csv_value): # Explicitly convert DataFrame NaN to None for functions
+            
+            # Original conversion of NaN to None
+            if pd.isna(profit_target_csv_value): 
                 profit_target_csv_value = None
+            # MODIFICATION: If CSV profittarget is 100 (float 100.0), treat as None (no profit target)
+            elif profit_target_csv_value == 100.0:
+                logging.info(f"Row {idx+1} (Time: {hour_minute}, Plan: {plan_suffix}): CSV profittarget was 100.0, overriding to None (no profit target).")
+                profit_target_csv_value = None
+            # else: profit_target_csv_value is some other number (e.g. 50.0) or was already None.
             
             # Determine EMA strategy and corresponding condition IDs
             csv_ema_strat_val = row.get('Strategy', 'EMA520') # Default to EMA520 if missing
@@ -1165,7 +1172,7 @@ def main():
             if 'profittarget' in data.columns: # Add profittarget if it exists
                 final_print_columns.append('profittarget')
             if 'OptionType' in data.columns: # Add OptionType if it exists
-                 final_print_columns.append('OptionType')
+                final_print_columns.append('OptionType')
             
             # Filter to existing columns to avoid KeyError if some are not in 'data'
             existing_final_columns = [col for col in final_print_columns if col in data.columns]
