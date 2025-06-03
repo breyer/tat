@@ -8,7 +8,7 @@ on the provided CSV and command-line arguments.
 
 Usage:
     python tradeplan2db3.py [--qty QTY] [--distribution] [--force-initialize [PLAN_COUNT]]
-                                 [--initialize]
+                            [--initialize]
 """
 
 import argparse
@@ -944,6 +944,24 @@ def process_tradeplan(conn, data, trade_condition_ids):
     logging.info("Finished processing all rows in tradeplan CSV.")
 
 
+def get_schedule_times():
+    """
+    Returns a list of trade entry times as strings in HH:MM format.
+    """
+    original_times_tuples = [
+        (9,33), (9,39), (9,45), (9,52),
+        (10,0), (10,8), (10,15), (10,23), (10,30), (10,38), (10,45), (10,53),
+        (11,0), (11,8), (11,15), (11,23), (11,30), (11,38), (11,45), (11,53),
+        (12,0), (12,8), (12,15), (12,23), (12,30), (12,38), (12,45), (12,53),
+        (13,0), (13,8), (13,15), (13,23), (13,30), (13,38), (13,45), (13,53),
+        (14,0), (14,8), (14,15), (14,23), (14,30), (14,38), (14,45), (14,53),
+        (15,0), (15,8), (15,15), (15,23), (15,30), (15,38), (15,45)
+    ]
+    # Format the times as HH:MM strings
+    formatted_times = [f"{h:02d}:{m:02d}" for h, m in original_times_tuples]
+    return formatted_times
+
+
 def main():
     args = parse_arguments()
     setup_logging() 
@@ -977,12 +995,10 @@ def main():
     try:
         conn = connect_database(db_path)
 
-        times = [
-            "09:33", "09:45", "10:00", "10:15", "10:30", "10:45", "11:00",
-            "11:15", "11:30", "11:45", "12:00", "12:15", "12:30", "12:45",
-            "13:00", "13:15", "13:30", "13:45", "14:00", "14:15", "14:30",
-            "14:45", "15:00", "15:15", "15:30", "15:45"
-        ]
+        # Get the list of times from the new function
+        times = get_schedule_times()
+        logging.info(f"Using entry times: {times}")
+
 
         if args.force_initialize is not None:
             plan_count = args.force_initialize
