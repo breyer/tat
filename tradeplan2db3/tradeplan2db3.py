@@ -643,27 +643,24 @@ def initialize_database(conn, plan_count, force, accounts, times):
         plan_suffixes = [f"P{i}" for i in range(1, plan_count + 1)]
         create_trade_templates(conn, plan_suffixes, times) # Creates or verifies templates
 
-        if force: # Only create schedules from scratch if force initializing
-            if not accounts:
-                logging.error("No accounts provided for force-initialize. Schedules will not be created.")
-                print("Error: No accounts provided for force-initialize. Schedules will not be created.")
-                # Not rolling back here as conditions/templates might be desired.
-                # Or, one might choose to rollback if accounts are mandatory for force-init.
-            else:
-                create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, active=False)
-        else: # For --initialize, we don't create schedules here; they are managed by CSV processing
-            logging.info("Standard initialization: Ensured conditions and templates exist. Schedules managed by CSV processing.")
-
+        # Create schedules if accounts are provided, for both --initialize and --force-initialize
+        if not accounts:
+            logging.error("No accounts provided for initialization. Schedules will not be created.")
+            print("Error: No accounts provided for initialization. Schedules will not be created.")
+        else:
+            # Create schedules as inactive for both init types for consistency.
+            create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, active=False)
 
         conn.commit()
         if force:
             print(f"Force-initialized DB with TradeConditions, TradeTemplates for P1..P{plan_count}.")
-            if accounts:
-                print("Schedules created (inactive).")
-            else:
-                print("Schedules NOT created due to missing accounts.")
         else:
             print(f"Standard initialization complete. Ensured TradeConditions and TradeTemplates up to P{plan_count} exist.")
+        
+        if accounts:
+            print("Schedules created (inactive) or verified.")
+        else:
+            print("Schedules NOT created due to missing accounts.")
 
     except Exception as e: # Catch any exception during initialization
         logging.error(f"Error during database initialization: {e}", exc_info=True)
@@ -1028,8 +1025,9 @@ def main():
                     max_p = max(max_p, int(match.group(1)))
             plan_count_for_init = max(1, max_p) 
             
-            print(f"Initializing database: Ensuring TradeConditions and TradeTemplates up to P{plan_count_for_init} exist.")
-            initialize_database(conn, plan_count_for_init, force=False, accounts=[], times=times) 
+            print("Initializing database: Ensuring all required entries exist.")
+            accounts_for_init = get_accounts()
+            initialize_database(conn, plan_count_for_init, force=False, accounts=accounts_for_init, times=times)
             logging.info(f"Database initialized/verified for up to P{plan_count_for_init} plans.")
             sys.exit(0) 
 
