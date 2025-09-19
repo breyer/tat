@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""
-tradeplan2db3.py
+"""Updates the Trade Automation Toolbox database from a CSV trade plan.
 
-This script processes a trade plan from a CSV file and updates an SQLite database accordingly.
-It handles database backups, initializes trade conditions, trade templates, and schedules based
-on the provided CSV and command-line arguments.
+This script reads a `tradeplan.csv` file to update an SQLite database (`data.db3`)
+used by the Trade Automation Toolbox. It automates the configuration of trading
+strategies by creating and updating trade conditions, templates, and schedules.
 
-Usage:
-    python tradeplan2db3.py [--qty QTY] [--distribution] [--force-initialize [PLAN_COUNT]]
-                            [--initialize]
+Key functionalities include:
+- Creating timestamped backups of the database before making changes.
+- Parsing command-line arguments for different modes of operation.
+- Initializing the database with default trading conditions (e.g., EMA crossovers).
+- Creating or updating trade templates and schedules based on the CSV input.
+- Handling different initialization modes (full force-init or standard init).
+- Processing a trade plan CSV to update templates and activate schedules.
 """
 
 import argparse
@@ -25,8 +28,10 @@ import numpy as np # Import numpy for np.nan
 
 
 def parse_arguments():
-    """
-    Parse command-line arguments.
+    """Parses command-line arguments for the script.
+
+    Returns:
+        argparse.Namespace: An object containing the parsed command-line arguments.
     """
     parser = argparse.ArgumentParser(description='Process tradeplan.')
     parser.add_argument(
@@ -61,8 +66,10 @@ def parse_arguments():
 
 
 def setup_logging():
-    """
-    Configure logging for the script.
+    """Configures logging to write to a file.
+
+    Sets up a logging configuration to append messages to
+    'tradeplan_updates.log' with a specific format.
     """
     logging.basicConfig(
         filename='tradeplan_updates.log',
@@ -73,8 +80,18 @@ def setup_logging():
 
 
 def create_backup(db_path, backup_dir_path):
-    """
-    Create a backup of the database and compress it into a ZIP archive.
+    """Creates a timestamped backup of the database file.
+
+    The backup is created as a .db3 file and then compressed into a
+    .zip archive in the specified backup directory.
+
+    Args:
+        db_path (str): The path to the database file to be backed up.
+        backup_dir_path (str): The directory where the backup will be stored.
+
+    Returns:
+        str: The path to the uncompressed backup .db3 file. The .zip archive
+             is also created but this path is used for later cleanup.
     """
     current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_filename = f'data_backup_{current_datetime}'
@@ -104,8 +121,13 @@ def create_backup(db_path, backup_dir_path):
 
 
 def connect_database(db_path):
-    """
-    Connect to the SQLite database.
+    """Establishes a connection to the SQLite database.
+
+    Args:
+        db_path (str): The file path of the SQLite database.
+
+    Returns:
+        sqlite3.Connection: A connection object to the database.
     """
     try:
         conn = sqlite3.connect(db_path)
@@ -118,9 +140,13 @@ def connect_database(db_path):
 
 
 def get_accounts():
-    """
-    Prompt the user to input Account IDs in the format "IB:U1234567" or "IB:U12345678".
-    Allows up to 3 accounts.
+    """Prompts the user to enter up to three brokerage account IDs.
+
+    The function validates the account ID format and normalizes it to the
+    standard "IB:U########" format.
+
+    Returns:
+        list[str]: A list of validated and formatted account IDs.
     """
     accounts = []
     max_accounts = 3
@@ -184,9 +210,19 @@ def get_accounts():
 
 
 def create_trade_conditions(conn):
-    """
-    Create EMA conditions in the database and return their IDs and descriptions.
-    Also set RetryUntilExpiration=0 for all conditions.
+    """Creates or verifies the necessary EMA trade conditions in the database.
+
+    This function ensures that a standard set of EMA (Exponential Moving
+    Average) crossover conditions exist in the `TradeCondition` table.
+    If a condition doesn't exist, it's created. It also standardizes
+    all conditions to have `RetryUntilExpiration = 0` and `ComparisonType = 'Input'`.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+
+    Returns:
+        dict: A dictionary mapping the internal strategy name (e.g., "EMA520")
+              to the condition's ID and description.
     """
     conditions = {
         "EMA520": ("EMA5 > EMA20", ">", "EMA5", "EMA20"),
@@ -251,9 +287,17 @@ def create_trade_conditions(conn):
 
 
 def create_trade_templates(conn, plan_suffixes, times):
-    """
-    Create or update TradeTemplates for given plan_suffixes and times.
-    Default ProfitTargetType and ProfitTarget are None and will be updated by process_tradeplan if specified in CSV.
+    """Creates or reactivates trade templates for each plan and time.
+
+    For each combination of a plan suffix (e.g., "P1") and an entry time,
+    this function ensures that corresponding PUT and CALL spread trade
+    templates exist in the `TradeTemplate` table. If a template exists
+    but is marked as deleted, it is reactivated.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        plan_suffixes (list[str]): A list of plan suffixes (e.g., ["P1", "P2"]).
+        times (list[str]): A list of entry times in "HH:MM" format.
     """
     try:
         for plan in plan_suffixes:
@@ -432,8 +476,21 @@ def create_trade_templates(conn, plan_suffixes, times):
 
 
 def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, active=True):
-    """
-    Create or update ScheduleMaster entries for each plan/time/account.
+    """Creates or verifies trading schedules in the ScheduleMaster table.
+
+    For each combination of plan, time, and account, this function creates
+    the necessary PUT and CALL schedules, linking them to the appropriate
+    trade templates and conditions. It avoids creating duplicate schedules
+    if they already exist.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        plan_suffixes (list[str]): A list of plan suffixes (e.g., ["P1", "P2"]).
+        trade_condition_ids (dict): A dictionary of trade condition data.
+        accounts (list[str]): A list of account IDs to create schedules for.
+        times (list[str]): A list of entry times in "HH:MM" format.
+        active (bool, optional): Whether the created schedules should be
+            marked as active. Defaults to True.
     """
     try:
         for plan in plan_suffixes:
@@ -553,8 +610,20 @@ def create_schedules(conn, plan_suffixes, trade_condition_ids, accounts, times, 
 
 
 def verify_put_update(conn, trade_template_id, expected_target_max, expected_long_width, expected_stop_multiple):
-    """
-    Verify that the PUT Spread Template has correct columns. (Utility/Test function)
+    """Verifies that a PUT trade template has been updated correctly.
+
+    This is a utility/testing function to check if key fields in a PUT
+    spread template match the expected values after an update.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        trade_template_id (int): The ID of the trade template to verify.
+        expected_target_max (float): The expected 'TargetMax' value.
+        expected_long_width (str): The expected 'LongWidth' value.
+        expected_stop_multiple (float): The expected 'StopMultiple' value.
+
+    Returns:
+        bool: True if the verification passes, False otherwise.
     """
     try:
         cursor = conn.execute("""
@@ -585,8 +654,20 @@ def verify_put_update(conn, trade_template_id, expected_target_max, expected_lon
 
 
 def verify_call_update(conn, trade_template_id, expected_target_max_call, expected_long_width, expected_stop_multiple):
-    """
-    Verify that the CALL Spread Template has correct columns. (Utility/Test function)
+    """Verifies that a CALL trade template has been updated correctly.
+
+    This is a utility/testing function to check if key fields in a CALL
+    spread template match the expected values after an update.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        trade_template_id (int): The ID of the trade template to verify.
+        expected_target_max_call (float): The expected 'TargetMaxCall' value.
+        expected_long_width (str): The expected 'LongWidth' value.
+        expected_stop_multiple (float): The expected 'StopMultiple' value.
+
+    Returns:
+        bool: True if the verification passes, False otherwise.
     """
     try:
         cursor = conn.execute("""
@@ -617,8 +698,19 @@ def verify_call_update(conn, trade_template_id, expected_target_max_call, expect
 
 
 def initialize_database(conn, plan_count, force, accounts, times):
-    """
-    Initialize entire DB: optionally delete old data, create conditions/templates/schedules.
+    """Initializes the database with conditions, templates, and schedules.
+
+    This function orchestrates the database setup. It can operate in two modes:
+    - Standard init: Ensures all required items exist without deleting data.
+    - Force init: Wipes existing data from relevant tables before creating
+      items from scratch.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        plan_count (int): The number of plans (e.g., P1 to P<n>) to create.
+        force (bool): If True, performs a force initialization.
+        accounts (list[str]): A list of account IDs for schedule creation.
+        times (list[str]): A list of entry times for template/schedule creation.
     """
     try:
         conn.execute("BEGIN TRANSACTION")
@@ -673,8 +765,18 @@ def initialize_database(conn, plan_count, force, accounts, times):
 
 
 def update_template_profit_target(conn, template_id, profit_target_percentage):
-    """
-    Helper function to update profit target fields for a given template ID.
+    """Updates the profit target fields for a specific trade template.
+
+    This helper function sets the `ProfitTargetType`, `ProfitTarget`, and
+    `OrderIDProfitTarget` fields based on a given percentage. If the
+    percentage is None or NaN, it clears the profit target fields.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        template_id (int): The ID of the `TradeTemplate` to update.
+        profit_target_percentage (float | None): The profit target as a
+            percentage (e.g., 50.0 for 50%). NaN or None will disable
+            the profit target.
     """
     profit_target_type_val = None
     profit_target_val = None
@@ -700,8 +802,15 @@ def update_template_profit_target(conn, template_id, profit_target_percentage):
 
 
 def update_put_template(conn, template_name, premium, spread, stop_multiple, profit_target_percentage):
-    """
-    Updates specific fields of a PUT TradeTemplate.
+    """Updates the key parameters of a specific PUT trade template.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        template_name (str): The name of the PUT template to update.
+        premium (float): The new 'TargetMax' value.
+        spread (str): The new 'LongWidth' value (e.g., "20,25,30").
+        stop_multiple (float): The new 'StopMultiple' value.
+        profit_target_percentage (float | None): The profit target percentage.
     """
     cursor = conn.execute(
         "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
@@ -724,9 +833,15 @@ def update_put_template(conn, template_name, premium, spread, stop_multiple, pro
 
 
 def update_call_template(conn, template_name, premium, spread, stop_multiple, profit_target_percentage):
-    """
-    Updates specific fields of a CALL TradeTemplate.
-    'premium' here refers to TargetMaxCall.
+    """Updates the key parameters of a specific CALL trade template.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        template_name (str): The name of the CALL template to update.
+        premium (float): The new 'TargetMaxCall' value.
+        spread (str): The new 'LongWidth' value.
+        stop_multiple (float): The new 'StopMultiple' value.
+        profit_target_percentage (float | None): The profit target percentage.
     """
     cursor = conn.execute(
         "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
@@ -753,9 +868,21 @@ def update_call_template(conn, template_name, premium, spread, stop_multiple, pr
 
 def update_schedule_master_entry(conn, template_name, qty_override, ema_strategy_key,
                                  condition_id, condition_desc, plan_suffix, option_type_str):
-    """
-    Updates a single ScheduleMaster entry. Creates if not exists, based on template name.
-    option_type_str is "PUT" or "CALL" for logging/display purposes.
+    """Activates and updates schedules associated with a trade template.
+
+    This function finds all schedules linked to a given template name,
+    sets them to active, and updates their quantity, strategy, and
+    condition details.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        template_name (str): The name of the template whose schedules to update.
+        qty_override (int): The new quantity override value.
+        ema_strategy_key (str): The internal key for the EMA strategy (e.g., "EMA520").
+        condition_id (int): The ID of the trade condition to link.
+        condition_desc (str): The description of the trade condition.
+        plan_suffix (str): The plan suffix (e.g., "P1").
+        option_type_str (str): The option type ("PUT" or "CALL") for logging.
     """
     cursor = conn.execute(
         "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
@@ -801,8 +928,16 @@ def update_schedule_master_entry(conn, template_name, qty_override, ema_strategy
 
 
 def process_tradeplan(conn, data, trade_condition_ids):
-    """
-    Reads the DataFrame row by row, updates the relevant templates & schedules.
+    """Processes the trade plan DataFrame to update the database.
+
+    This function iterates through each row of the trade plan data,
+    validates the inputs, and calls the appropriate functions to update
+    the `TradeTemplate` and `ScheduleMaster` tables in the database.
+
+    Args:
+        conn (sqlite3.Connection): The database connection object.
+        data (pd.DataFrame): The DataFrame containing the trade plan from the CSV.
+        trade_condition_ids (dict): A dictionary of available trade conditions.
     """
 
     if "Plan" not in data.columns:
@@ -943,8 +1078,10 @@ def process_tradeplan(conn, data, trade_condition_ids):
 
 
 def get_schedule_times():
-    """
-    Returns a list of trade entry times as strings in HH:MM format.
+    """Returns a predefined list of trade entry times.
+
+    Returns:
+        list[str]: A list of trade entry times formatted as "HH:MM".
     """
     original_times_tuples = [
         (9,33), (9,39), (9,45), (9,52),
@@ -961,6 +1098,18 @@ def get_schedule_times():
 
 
 def main():
+    """The main entry point for the script.
+
+    This function orchestrates the entire process of updating the database.
+    It performs the following steps:
+    1. Parses command-line arguments.
+    2. Sets up logging.
+    3. Creates a backup of the database.
+    4. Connects to the database.
+    5. Handles initialization modes (`--force-initialize` or `--initialize`).
+    6. Processes the `tradeplan.csv` file to update templates and schedules.
+    7. Cleans up the backup file.
+    """
     args = parse_arguments()
     setup_logging() 
 
@@ -1197,4 +1346,5 @@ def main():
 
 
 if __name__ == "__main__":
+    # Main execution block
     main()

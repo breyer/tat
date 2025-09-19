@@ -1,53 +1,72 @@
+"""Automates the login process for the Trade Automation Toolbox (TAT).
+
+This script checks if the TAT application is running, starts it if it's not,
+and then automates the UI interactions to log in with user credentials and
+connect to the broker.
+"""
+
 import subprocess
 import pyautogui
 import pygetwindow as gw
 import time
-import pyperclip  # For clipboard usage
-import psutil  # To check if TAT is already running
+import pyperclip
+import psutil
 import json
 import os
 import logging
 
-# Configuration Variables
-email = os.getenv("EMAIL", "")
-password = os.getenv("PASSWORD", "")
-RESTART_TAT_IF_RUNNING = "NO"
-LOG_TO_FILE = "NO"  # Set this to 'YES' if you want to log to a file
+# --- Configuration Variables ---
+# It is recommended to use environment variables for sensitive data.
+email = os.getenv("EMAIL", "your_email@example.com")
+password = os.getenv("PASSWORD", "your_password")
 
-# Set up logging based on the LOG_TO_FILE variable
+# Set to "YES" to automatically stop and restart TAT if it's already running.
+RESTART_TAT_IF_RUNNING = "NO"
+
+# Set to "YES" to log output to a file named 'tat_auto_login.log'.
+LOG_TO_FILE = "NO"
+
+# --- Logging Setup ---
 if LOG_TO_FILE == "YES":
-    logging.basicConfig(filename='tat_auto_login.log', level=logging.DEBUG,
-                        format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(
+        filename='tat_auto_login.log',
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
 else:
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
 
 
 def get_uwp_app_package_family_name(app_name="Trade Automation Toolbox"):
-    """
-    Retrieves the Package Family Name of a UWP app using PowerShell.
+    """Retrieves the Package Family Name for a UWP app via PowerShell.
 
     Args:
-        app_name (str): The display name of the UWP app.
+        app_name (str): The display name of the UWP application.
 
     Returns:
-        str: The Package Family Name of the UWP app, or None if not found.
+        str: The Package Family Name of the app, or None if not found.
     """
     try:
-        # PowerShell command to get all installed UWP apps as JSON
-        command = f'powershell "Get-AppxPackage | Where-Object {{ $_.Name -like \'*{app_name}*\' }} | ConvertTo-Json"'
-        result = subprocess.run(command, capture_output=True, text=True, shell=True)
-        
+        command = (
+            'powershell "Get-AppxPackage | '
+            f"Where-Object {{ $_.Name -like '*{app_name}*' }} | ConvertTo-Json\""
+        )
+        result = subprocess.run(
+            command, capture_output=True, text=True, shell=True
+        )
+
         if result.returncode != 0:
             logging.error(f"Error in PowerShell query: {result.stderr}")
             return None
 
-        # Parse the JSON result to get the Package Family Name
         app_info = json.loads(result.stdout)
-        
         if isinstance(app_info, list):
-            app_info = app_info[0]  # If multiple apps are found, use the first one
+            app_info = app_info[0]
 
-        package_family_name = app_info.get('PackageFamilyName', None)
+        package_family_name = app_info.get('PackageFamilyName')
         if package_family_name:
             logging.info(f"Package Family Name found: {package_family_name}")
             return package_family_name
@@ -56,16 +75,15 @@ def get_uwp_app_package_family_name(app_name="Trade Automation Toolbox"):
             return None
 
     except Exception as e:
-        logging.error(f"Error retrieving the Package Family Name: {e}")
+        logging.error(f"Error retrieving Package Family Name: {e}")
         return None
 
 
 def is_tat_running():
-    """
-    Checks if the Trade Automation Toolbox (TAT) executable is currently running.
-    
+    """Checks if the 'Trade Automation Toolbox.exe' process is running.
+
     Returns:
-        bool: True if TAT is running, False otherwise.
+        bool: True if the process is running, False otherwise.
     """
     for process in psutil.process_iter(['pid', 'name']):
         if process.info['name'] == "Trade Automation Toolbox.exe":
@@ -75,132 +93,120 @@ def is_tat_running():
 
 
 def stop_tat_gracefully():
-    """
-    Attempts to gracefully stop the 'Trade Automation Toolbox.exe' process.
-    Waits up to 15 seconds before forcefully killing the process if it doesn't exit.
+    """Attempts to gracefully terminate the TAT process.
+
+    If the process does not terminate within 15 seconds, it is
+    forcefully killed.
     """
     for process in psutil.process_iter(['pid', 'name']):
         if process.info['name'] == "Trade Automation Toolbox.exe":
-            logging.info(f"Attempting to gracefully terminate TAT with PID: {process.info['pid']}")
-            process.terminate()  # Gracefully terminate the process
-
-            # Wait up to 15 seconds for the process to terminate
+            logging.info(
+                "Attempting to gracefully terminate TAT with PID: "
+                f"{process.info['pid']}"
+            )
+            process.terminate()
             try:
-                process.wait(15)  # Wait for up to 15 seconds
+                process.wait(15)
                 logging.info("TAT terminated gracefully.")
             except psutil.TimeoutExpired:
-                logging.warning("TAT did not terminate within 15 seconds, forcefully killing it.")
-                process.kill()  # Force kill if it didn't terminate within 15 seconds
+                logging.warning(
+                    "TAT did not terminate in time, forcefully killing it."
+                )
+                process.kill()
             except Exception as e:
-                logging.error(f"Error while waiting for TAT to terminate: {e}")
-                process.kill()  # Fallback to force kill in case of unexpected errors
+                logging.error(f"Error waiting for TAT to terminate: {e}")
+                process.kill()
 
 
 def start_uwp_app(package_family_name):
-    """
-    Starts a UWP app using the Package Family Name.
+    """Starts a UWP application using its Package Family Name.
 
     Args:
         package_family_name (str): The Package Family Name of the UWP app.
     """
     if package_family_name:
         try:
-            # Start the UWP app using the Package Family Name
-            subprocess.Popen(f"explorer.exe shell:AppsFolder\\{package_family_name}!App")
-            logging.info(f"UWP app {package_family_name} successfully started!")
+            command = f"explorer.exe shell:AppsFolder\\{package_family_name}!App"
+            subprocess.Popen(command)
+            logging.info(f"UWP app '{package_family_name}' started.")
         except Exception as e:
             logging.error(f"Error starting the UWP app: {e}")
     else:
-        logging.error("No Package Family Name provided.")
+        logging.error("No Package Family Name provided to start_uwp_app.")
 
 
 def login_to_tat(email, password):
-    """
-    Automates logging into the Trade Automation Toolbox.
+    """Automates the UI interactions to log into TAT.
+
+    This function waits for the TAT window to appear, activates it, and then
+    simulates keyboard inputs to enter the email and password, log in, and
 
     Args:
-        email (str): The email for login.
+        email (str): The email address for login.
         password (str): The password for login.
     """
-    # Wait until the TAT window is visible
-    time.sleep(10)  # Adjust if the program takes longer to load
+    time.sleep(10)  # Wait for the app to load
 
-    # Find and activate the TAT window
     try:
         app_window = gw.getWindowsWithTitle("Trade Automation Toolbox")[0]
     except IndexError:
         logging.error("Trade Automation Toolbox window not found.")
         return
-    
-    # Ensure the window is active
+
     if app_window.isMinimized:
         app_window.restore()
     app_window.activate()
-    time.sleep(2)  # Additional wait time to ensure window activation
+    time.sleep(2)
 
     if not app_window.isActive:
-        logging.error("Window is not active.")
+        logging.error("TAT window could not be activated.")
         return
-    
-    logging.info("Window successfully activated.")
 
-    # 1. Press TAB 4 times to reach the email field
-    for _ in range(4):
-        pyautogui.press('tab')
-        time.sleep(0.5)  # Small delay for each TAB
+    logging.info("TAT window activated. Proceeding with login.")
 
-    # 2. Clear the email field by selecting all and deleting it
-    pyautogui.hotkey('ctrl', 'a')  # Select all
-    pyautogui.press('backspace')  # Delete the content
+    # Navigate to email field
+    pyautogui.press('tab', presses=4, interval=0.5)
 
-    # 3. Paste the entire email using clipboard
+    # Enter email
+    pyautogui.hotkey('ctrl', 'a')
+    pyautogui.press('backspace')
     pyperclip.copy(email)
     pyautogui.hotkey('ctrl', 'v')
 
-    # 4. Press TAB to move to the password field
+    # Navigate to password field
     pyautogui.press('tab')
 
-    # 5. Clear the password field by selecting all and deleting it
-    pyautogui.hotkey('ctrl', 'a')  # Select all
-    pyautogui.press('backspace')  # Delete the content
-
-    # 6. Paste the password using clipboard
+    # Enter password
+    pyautogui.hotkey('ctrl', 'a')
+    pyautogui.press('backspace')
     pyperclip.copy(password)
     pyautogui.hotkey('ctrl', 'v')
 
-    # 7. Press Enter to log in
+    # Log in
     pyautogui.press('enter')
+    logging.info("Login information submitted.")
 
-    logging.info("Login completed.")
-
-    # 8. Wait 5 seconds after login
+    # Connect to broker
     time.sleep(5)
-
-    # 9. Press TAB twice to reach the "Connect to Broker" button and press Enter
-    pyautogui.press('tab')
-    pyautogui.press('tab')
+    pyautogui.press('tab', presses=2)
     pyautogui.press('enter')
-
-    logging.info("Connection to broker established.")
+    logging.info("Connection to broker initiated.")
 
 
 if __name__ == "__main__":
-    # Try to retrieve the Package Family Name of the "Trade Automation Toolbox"
-    package_family_name = get_uwp_app_package_family_name("TradeAutomationToolbox")
+    # Main execution block
+    package_name = get_uwp_app_package_family_name("TradeAutomationToolbox")
 
-    # Check if TAT is already running
     if is_tat_running():
-        if RESTART_TAT_IF_RUNNING == "YES":
-            logging.info("TAT is running. Stopping it before restarting...")
+        if RESTART_TAT_IF_RUNNING.upper() == "YES":
+            logging.info("TAT is running. Stopping it before restarting.")
             stop_tat_gracefully()
         else:
             logging.info("TAT is already running. Exiting script.")
             exit()
 
-    # Start the UWP app if the Package Family Name was found
-    if package_family_name:
-        start_uwp_app(package_family_name)
-
-    # Wait for the app to start and then execute the automated login
-    time.sleep(10)  # Ensure the app has loaded before proceeding
-    login_to_tat(email, password)
+    if package_name:
+        start_uwp_app(package_name)
+        login_to_tat(email, password)
+    else:
+        logging.error("Could not start TAT because Package Family Name was not found.")

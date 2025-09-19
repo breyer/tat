@@ -1,50 +1,76 @@
-# Trade Automation Toolbox - Auto Login Script
+# TAT Auto-Login & Connect
 
-This script automates the process of logging into the Trade Automation Toolbox (TAT) and connecting it to your broker. It utilizes Python's automation libraries to mimic keyboard interactions, such as entering your credentials and navigating through the UI, ensuring that the TAT connects to your broker in an efficient and hands-off manner.
+This script automates the process of launching, logging into, and connecting the Trade Automation Toolbox (TAT) to your broker. It uses UI automation to simulate keyboard and mouse interactions, saving you from the repetitive manual steps required each time you start the application.
 
 ## Features
 
-- Automatically launches the Trade Automation Toolbox (TAT).
-- Simulates the keyboard inputs required to log in.
-- Automatically connects the TAT to your broker after login.
-- Uses clipboard for special characters (like `@`) to ensure consistent input.
-- Adds configurable wait times for login and broker connection.
-- **New Feature**: Optional restart functionality—stop and restart TAT if it's already running.
-- **Graceful Exit**: If TAT is already running and a restart is not needed, the script exits without performing any actions.
+- **Automatic Launch**: Starts the Trade Automation Toolbox (UWP app).
+- **Automated Login**: Enters your email and password into the login form.
+- **Broker Connection**: Clicks the "Connect to Broker" button after a successful login.
+- **Clipboard for Reliability**: Uses the system clipboard to paste credentials, which can prevent issues with special characters.
+- **Process Management**:
+  - Checks if TAT is already running.
+  - Optionally, it can gracefully stop a running instance before launching a new one.
+- **Configurable**: Key settings can be adjusted at the top of the script or via environment variables.
+- **Logging**: Provides detailed logs for troubleshooting, with an option to write to a file.
 
 ## Requirements
 
-### Software
-- **Python 3.x**: Ensure that Python is installed on your machine. You can download it from [python.org](https://www.python.org/).
+- **Python 3.x**: You can download it from [python.org](https://www.python.org/).
+- **Trade Automation Toolbox**: The script assumes you have TAT installed on your machine.
 
 ### Python Dependencies
 
-The script relies on the following Python libraries:
-- `pyautogui`: For simulating keyboard and mouse actions.
-- `pygetwindow`: To handle and control windows.
-- `pyperclip`: To manage clipboard content (for inserting special characters like `@`).
-- `subprocess`: For running system commands, such as PowerShell queries to retrieve UWP app info.
-- `time`: For adding delays between actions.
-- `psutil`: For detecting and stopping the running instance of the `Trade Automation Toolbox.exe` process.
-- `json`: For handling JSON data when interacting with PowerShell queries.
-
-### Installation
-
-To install the required dependencies, run the following command in your terminal:
+This script relies on several Python libraries. You can install them all with a single command:
 
 ```bash
-pip install pyautogui pygetwindow pyperclip psutil json
+pip install pyautogui pygetwindow pyperclip psutil
+```
 
-### Usage
+## How to Use
 
-Running the Script
-Before running the script, ensure you have the Trade Automation Toolbox installed on your machine.
+### 1. Configure Your Credentials
 
-Update the credentials: Modify the email and password variables at the top of the script with your login details. It's recommended to use environment variables for security instead of hardcoding sensitive information.
+It is **strongly recommended** to use environment variables to keep your credentials secure.
 
-Control TAT Restarts:
+- **For Windows**:
+  ```powershell
+  $env:EMAIL="your_email@example.com"
+  $env:PASSWORD="your_password"
+  ```
+- **For macOS/Linux**:
+  ```bash
+  export EMAIL="your_email@example.com"
+  export PASSWORD="your_password"
+  ```
 
-By default, the script is configured to check if TAT is already running. If it is, the script will exit without taking any action.
-You can control whether TAT should be restarted by modifying the RESTART_TAT_IF_RUNNING variable.
-Set RESTART_TAT_IF_RUNNING to "YES" if you want the script to stop and restart TAT when it's already running.
-Leave it as "NO" to avoid restarting the app.
+Alternatively, you can hardcode your credentials by editing these lines in the script, but this is less secure:
+```python
+email = os.getenv("EMAIL", "your_email@example.com")
+password = os.getenv("PASSWORD", "your_password")
+```
+
+### 2. Configure Script Behavior
+
+You can change the following variables at the top of the `tat_auto_login.py` script:
+
+- `RESTART_TAT_IF_RUNNING`:
+  - `"NO"` (default): The script will exit if it finds that TAT is already running.
+  - `"YES"`: The script will stop the running TAT process and then restart it.
+- `LOG_TO_FILE`:
+  - `"NO"` (default): Logs are printed to the console.
+  - `"YES"`: Logs are written to a file named `tat_auto_login.log` in the same directory.
+
+### 3. Run the Script
+
+Open your terminal or command prompt and run the script:
+
+```bash
+python tat_auto_login.py
+```
+
+The script will then perform the automated login and connection sequence.
+
+## License
+
+This project is licensed under the MIT License. See the LICENSE file for details.

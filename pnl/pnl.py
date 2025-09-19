@@ -1,3 +1,4 @@
+"""Generates a static HTML report of PnL data for the current day."""
 import sqlite3
 import logging
 from datetime import datetime, timedelta
@@ -16,6 +17,7 @@ if not os.path.exists(directory):
 # Setup basic configuration for logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# --- Database Connection and Query ---
 # Connect to the SQLite database
 conn = sqlite3.connect('data.db3')
 logging.info("Connected to the database.")
@@ -64,6 +66,7 @@ if not data:
     logging.error(f"No data found for today: {desired_day}")
     exit()
 
+# --- Data Extraction and Processing ---
 # Extract values for plotting, including SPX prices
 dates = [datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S') for row in data]
 premium_sold = [row[2] for row in data]
@@ -86,6 +89,20 @@ spx_low_time = dates[spx_prices.index(spx_low)]
 
 # Define a function to dynamically adjust annotation positions to avoid overlaps
 def adjust_annotation_position(data_points, current_point, y_values, current_value, index, default_ax=80, default_ay=-90):
+    """Dynamically adjusts annotation positions to avoid overlaps.
+
+    Args:
+        data_points (list): A list of data points.
+        current_point (datetime): The current data point to be annotated.
+        y_values (list): A list of y-values.
+        current_value (float): The current y-value.
+        index (int): The index of the current data point.
+        default_ax (int, optional): The default x-axis annotation position. Defaults to 80.
+        default_ay (int, optional): The default y-axis annotation position. Defaults to -90.
+
+    Returns:
+        tuple: A tuple containing the adjusted x and y annotation positions.
+    """
     min_distance_x = timedelta(minutes=20)
     min_distance_y = max(y_values) * 0.05
     ax, ay = default_ax, default_ay
@@ -114,6 +131,19 @@ annotations = []  # Initialize the annotations list at the beginning
 
 # Define the function to create annotations with adjusted positions
 def create_annotation(x, y, text, xref, yref, index):
+    """Creates an annotation with adjusted position.
+
+    Args:
+        x (datetime): The x-coordinate of the annotation.
+        y (float): The y-coordinate of the annotation.
+        text (str): The text of the annotation.
+        xref (str): The x-reference of the annotation.
+        yref (str): The y-reference of the annotation.
+        index (int): The index of the annotation.
+
+    Returns:
+        go.layout.Annotation: A Plotly annotation object.
+    """
     ax, ay = adjust_annotation_position(dates, x, spx_prices if yref == 'y2' else pl, y, index)
     return go.layout.Annotation(
         x=x,
@@ -131,6 +161,7 @@ def create_annotation(x, y, text, xref, yref, index):
         ay=ay
     )
 
+# --- Plot Creation ---
 annotations = [
     create_annotation(min_pnl_time, min_pnl, f"Lowest PnL: {min_pnl} ({min_pnl_time.strftime('%H:%M')})", 'x', 'y', 0),
     create_annotation(max_pnl_time, max_pnl, f"Highest PnL: {max_pnl} ({max_pnl_time.strftime('%H:%M')})", 'x', 'y', 1),
