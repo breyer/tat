@@ -863,7 +863,8 @@ def process_tradeplan(conn, data, trade_condition_ids):
             
             stop_val_str = str(row.get('Stop', '0'))
             if stop_val_str.lower().endswith('x'):
-                stop_multiple = float(stop_val_str[:-1]) if stop_val_str[:-1] else 0.0
+                stop_val = stop_val_str[:-1]
+                stop_multiple = float(stop_val) if stop_val else 1.0
             else:
                 stop_multiple = float(stop_val_str) if stop_val_str else 0.0
             
