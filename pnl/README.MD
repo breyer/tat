@@ -1,49 +1,61 @@
-# TAT Profit/Loss Visualization Script
+# TAT Profit/Loss Visualization Scripts
 
-This script connects to a SQLite database containing trading data, fetches the data for today, and visualizes it using Plotly. The visualization includes premium sold and profit/loss (PnL) over time.
+This directory contains two Python scripts for visualizing profit and loss (PnL) data from the Trade Automation Toolbox (TAT) SQLite database (`data.db3`).
 
 ![Example plot](https://github.com/breyer/tat/blob/main/plot-example.png?raw=true)
+
+## Scripts
+
+### 1. `pnl.py` - Static PnL Report
+
+This script generates a static HTML report of the PnL for the current day. It connects to the database, fetches today's trading data, and creates an interactive Plotly graph. The graph includes annotations for the highest, lowest, and final PnL, as well as the high and low of the SPX.
+
+### 2. `live.py` - Live PnL Dashboard
+
+This script launches a live-updating web dashboard using Dash. The dashboard displays the PnL for the current day and automatically refreshes every 15 seconds to provide a real-time view of trading performance.
 
 ## Prerequisites
 
 - Python 3.x
-- SQLite database (`data.db3`)
-- Required Python packages: `sqlite3`, `logging`, `datetime`, `timedelta`, `plotly.graph_objects`
+- A `data.db3` SQLite database file from the Trade Automation Toolbox in the same directory as the scripts.
 
 ## Installation
 
-Ensure you have Python installed. You can download it from the [official Python website](https://www.python.org/).
-
-1. Clone this repository to your local machine.
-
-2. Install the required Python packages:
-
-   ```bash
-   pip install plotly
-   pip install dash # Only needed if you want to run the live version`` 
-
-Ensure you have the SQLite database (`data.db3`) in the same directory as the script.
+1.  **Clone the repository** to your local machine.
+2.  **Install the required Python packages.**
+    - For the static report (`pnl.py`):
+      ```bash
+      pip install plotly pandas
+      ```
+    - For the live dashboard (`live.py`), you also need Dash:
+      ```bash
+      pip install plotly pandas dash
+      ```
 
 ## Usage
 
-Run the script:
+### Running the Static Report (`pnl.py`)
 
+To generate a static PnL report for the current day, run the following command in your terminal:
 
-`python pnl.py` or `python live.py` 
+```bash
+python pnl.py
+```
 
-The script will connect to the SQLite database and fetch trading data for today. It will then visualize the data using Plotly.
+The script will:
+- Create a `pnl-log` directory if it doesn't exist.
+- Generate an interactive HTML file named `{current_date}_trading_data.html` inside the `pnl-log` directory.
+- Open the generated HTML file in your default web browser.
 
-The visualization includes premium sold and PnL over time, along with annotations for the lowest, highest, and final PnL.
+### Running the Live Dashboard (`live.py`)
 
-The graph will be displayed in your default web browser. Additionally, an HTML file (`{desired_day}_trading_data.html`) will be saved in the same directory containing the visualization.
+To launch the live PnL dashboard, run this command:
 
-## Script Explanation
+```bash
+python live.py
+```
 
--   The script connects to the SQLite database (`data.db3`) and fetches trading data for today.
--   It calculates the start datetime at 09:20 AM and the end datetime at 16:30 PM.
--   Data fetched includes `DailyLogID`, datetime, premium sold, and PnL.
--   The script visualizes the data using Plotly, including annotations for key PnL points.
--   The graph is displayed in the web browser and saved as an HTML file.
+The script will start a local web server and provide a URL (usually `http://127.0.0.1:8050/`). Open this URL in your web browser to view the live-updating dashboard.
 
 ## License
 
