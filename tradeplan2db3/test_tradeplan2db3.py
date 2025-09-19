@@ -487,3 +487,19 @@ def test_process_tradeplan_invalid_strategy(trade_plan_fixture):
     })
     with pytest.raises(ValueError, match="Unsupported Strategy 'INVALID' in CSV."):
         process_tradeplan(conn, trade_plan_df, trade_condition_ids)
+
+def test_process_tradeplan_stop_x(trade_plan_fixture):
+    """
+    Test that a 'Stop' value of 'x' is correctly parsed as 1.0.
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['09:33'], 'Premium': [2.5], 'Spread': ['10-15'], 'Stop': ['x'],
+        'Strategy': ['EMA520'], 'Plan': ['P1'], 'Qty': [2], 'profittarget': [50.0], 'OptionType': ['P']
+    })
+    process_tradeplan(conn, trade_plan_df, trade_condition_ids)
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT StopMultiple FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    res = cursor.fetchone()
+    assert res[0] == 1.0
