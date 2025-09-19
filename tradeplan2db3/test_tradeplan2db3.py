@@ -11,13 +11,110 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from tradeplan2db3 import (
+    parse_arguments,
+    get_accounts,
     get_schedule_times,
     create_backup,
     process_tradeplan,
     create_trade_conditions,
     create_trade_templates,
-    create_schedules
+    create_schedules,
+    initialize_database
 )
+
+def test_initialize_database_force(db_connection):
+    """
+    Test the initialize_database function with force=True.
+    """
+    # Add some dummy data to be deleted
+    db_connection.execute("INSERT INTO TradeTemplate (Name) VALUES ('DUMMY_TEMPLATE')")
+    db_connection.commit()
+
+    initialize_database(db_connection, plan_count=2, force=True, accounts=['IB:U1234567'], times=['09:33'])
+
+    cursor = db_connection.cursor()
+    cursor.execute("SELECT COUNT(*) FROM TradeTemplate WHERE Name = 'DUMMY_TEMPLATE'")
+    assert cursor.fetchone()[0] == 0
+
+    cursor.execute("SELECT COUNT(*) FROM TradeTemplate")
+    # 2 plans * 1 time * 2 types (put/call) = 4
+    assert cursor.fetchone()[0] == 4
+
+    cursor.execute("SELECT COUNT(*) FROM ScheduleMaster")
+    assert cursor.fetchone()[0] == 4
+
+def test_initialize_database_no_force(db_connection):
+    """
+    Test the initialize_database function with force=False (standard init).
+    """
+    # Add some dummy data that should NOT be deleted
+    db_connection.execute("INSERT INTO TradeTemplate (Name) VALUES ('DUMMY_TEMPLATE')")
+    db_connection.commit()
+
+    initialize_database(db_connection, plan_count=1, force=False, accounts=['IB:U1234567'], times=['09:33'])
+
+    cursor = db_connection.cursor()
+    cursor.execute("SELECT COUNT(*) FROM TradeTemplate WHERE Name = 'DUMMY_TEMPLATE'")
+    assert cursor.fetchone()[0] == 1
+
+    cursor.execute("SELECT COUNT(*) FROM TradeTemplate")
+    # 1 dummy + 1 plan * 1 time * 2 types = 3
+    assert cursor.fetchone()[0] == 3
+
+def test_get_accounts():
+    """
+    Test the get_accounts function for various user inputs.
+    """
+    # Test a single valid account entry
+    with patch('builtins.input', side_effect=['IB:U1234567', 'n']):
+        accounts = get_accounts()
+        assert accounts == ['IB:U1234567']
+
+    # Test multiple valid account entries with different formats
+    with patch('builtins.input', side_effect=['U12345678', 'y', '1234567', 'n']):
+        accounts = get_accounts()
+        assert accounts == ['IB:U12345678', 'IB:U1234567']
+
+    # Test invalid format followed by valid format
+    with patch('builtins.input', side_effect=['invalid-account', 'IB:U87654321', 'n']):
+        accounts = get_accounts()
+        assert accounts == ['IB:U87654321']
+
+    # Test empty input is rejected
+    with patch('builtins.input', side_effect=['', 'IB:U87654321', 'n']):
+        accounts = get_accounts()
+        assert accounts == ['IB:U87654321']
+
+def test_parse_arguments():
+    """
+    Test the parse_arguments function for all arguments.
+    """
+    with patch('sys.argv', ['tradeplan2db3.py', '--qty', '10']):
+        args = parse_arguments()
+        assert args.qty == 10
+
+    with patch('sys.argv', ['tradeplan2db3.py', '--distribution']):
+        args = parse_arguments()
+        assert args.distribution is True
+
+    with patch('sys.argv', ['tradeplan2db3.py', '--force-initialize', '5']):
+        args = parse_arguments()
+        assert args.force_initialize == 5
+
+    with patch('sys.argv', ['tradeplan2db3.py', '--force-initialize']):
+        args = parse_arguments()
+        assert args.force_initialize == -1  # Sentinel value
+
+    with patch('sys.argv', ['tradeplan2db3.py', '--initialize']):
+        args = parse_arguments()
+        assert args.initialize is True
+
+    with patch('sys.argv', ['tradeplan2db3.py']):
+        args = parse_arguments()
+        assert args.qty is None
+        assert args.distribution is False
+        assert args.force_initialize is None
+        assert args.initialize is False
 
 def test_get_schedule_times():
     """
@@ -66,6 +163,20 @@ def test_create_backup(temp_backup_env):
 
     actual_zip_path = os.path.join(backup_dir, zip_files[0])
     assert os.path.exists(actual_zip_path)
+
+def test_create_backup_file_not_found(tmp_path, caplog):
+    """
+    Test that create_backup handles a non-existent source database file.
+    """
+    non_existent_db = tmp_path / "non_existent.db3"
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+
+    with patch('sys.exit') as mock_exit:
+        create_backup(str(non_existent_db), str(backup_dir))
+        mock_exit.assert_called_once_with(1)
+
+    assert "Database file not found" in caplog.text
 
 @pytest.fixture
 def db_connection():
@@ -260,42 +371,119 @@ def test_create_schedules(db_connection):
     count = cursor.fetchone()[0]
     assert count == 2 # PUT and CALL
 
-def test_process_tradeplan(db_connection):
+@pytest.fixture
+def trade_plan_fixture(db_connection):
     """
-    Test the process_tradeplan function with a sample DataFrame.
+    Fixture to set up the database with initial data for process_tradeplan tests.
     """
     trade_condition_ids = create_trade_conditions(db_connection)
-    create_trade_templates(db_connection, ['P1'], ['09:33'])
-
+    create_trade_templates(db_connection, ['P1', 'P2'], ['09:33', '10:00'])
     accounts = ['IB:U1234567']
-    create_schedules(db_connection, ['P1'], trade_condition_ids, accounts, ['09:33'])
+    create_schedules(db_connection, ['P1', 'P2'], trade_condition_ids, accounts, ['09:33', '10:00'])
+    return db_connection, trade_condition_ids
 
-    trade_plan_data = {
-        'Hour:Minute': ['09:33'],
-        'Premium': [2.5],
-        'Spread': ['10-15'],
-        'Stop': ['1.5x'],
-        'Strategy': ['EMA520'],
-        'Plan': ['P1'],
-        'Qty': [2],
-        'profittarget': [50.0],
-        'OptionType': ['P']
-    }
-    trade_plan_df = pd.DataFrame(trade_plan_data)
+def test_process_tradeplan_put_only(trade_plan_fixture):
+    """
+    Test process_tradeplan with a single PUT entry.
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['09:33'], 'Premium': [2.5], 'Spread': ['10-15'], 'Stop': ['1.5x'],
+        'Strategy': ['EMA520'], 'Plan': ['P1'], 'Qty': [2], 'profittarget': [50.0], 'OptionType': ['P']
+    })
+    process_tradeplan(conn, trade_plan_df, trade_condition_ids)
 
-    with patch('tradeplan2db3.get_accounts', return_value=accounts):
-        process_tradeplan(db_connection, trade_plan_df, trade_condition_ids)
+    cursor = conn.cursor()
+    cursor.execute("SELECT ProfitTarget, QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('PUT SPREAD (09:33) P1',))
+    res = cursor.fetchone()
+    assert res[0] == 50.0
+    assert res[1] == 2
+    assert res[2] == 1
 
-    cursor = db_connection.cursor()
+def test_process_tradeplan_call_only(trade_plan_fixture):
+    """
+    Test process_tradeplan with a single CALL entry.
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['09:33'], 'Premium': [2.5], 'Spread': ['10-15'], 'Stop': ['1.5x'],
+        'Strategy': ['EMA520'], 'Plan': ['P1'], 'Qty': [3], 'profittarget': [60.0], 'OptionType': ['C']
+    })
+    process_tradeplan(conn, trade_plan_df, trade_condition_ids)
 
-    # Check TradeTemplate
-    cursor.execute("SELECT * FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
-    template = cursor.fetchone()
-    assert template is not None
+    cursor = conn.cursor()
+    cursor.execute("SELECT ProfitTarget, QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('CALL SPREAD (09:33) P1',))
+    res = cursor.fetchone()
+    assert res[0] == 60.0
+    assert res[1] == 3
+    assert res[2] == 1
 
-    # Check ScheduleMaster
-    cursor.execute("SELECT * FROM ScheduleMaster WHERE DisplayStrategy = ?", ('PUT SPREAD P1',))
-    schedule = cursor.fetchone()
-    assert schedule is not None
-    assert schedule[4] == 2 # QtyOverride
-    assert schedule[9] == 1 # IsActive
+def test_process_tradeplan_no_option_type(trade_plan_fixture):
+    """
+    Test process_tradeplan when OptionType is not specified (should update both PUT and CALL).
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['10:00'], 'Premium': [3.0], 'Spread': ['20-25'], 'Stop': ['2x'],
+        'Strategy': ['EMA540'], 'Plan': ['P2'], 'Qty': [4], 'profittarget': [70.0]
+    })
+    process_tradeplan(conn, trade_plan_df, trade_condition_ids)
+
+    cursor = conn.cursor()
+    # Check PUT
+    cursor.execute("SELECT ProfitTarget, QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('PUT SPREAD (10:00) P2',))
+    put_res = cursor.fetchone()
+    assert put_res[0] == 70.0
+    assert put_res[1] == 4
+    assert put_res[2] == 1
+
+    # Check CALL
+    cursor.execute("SELECT ProfitTarget, QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('CALL SPREAD (10:00) P2',))
+    call_res = cursor.fetchone()
+    assert call_res[0] == 70.0
+    assert call_res[1] == 4
+    assert call_res[2] == 1
+
+def test_process_tradeplan_profittarget_100(trade_plan_fixture):
+    """
+    Test that a profittarget of 100 is treated as None (no profit target).
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['09:33'], 'Premium': [2.5], 'Spread': ['10-15'], 'Stop': ['1.5x'],
+        'Strategy': ['EMA520'], 'Plan': ['P1'], 'Qty': [2], 'profittarget': [100.0], 'OptionType': ['P']
+    })
+    process_tradeplan(conn, trade_plan_df, trade_condition_ids)
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT ProfitTarget, OrderIDProfitTarget FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    res = cursor.fetchone()
+    assert res[0] is None
+    assert res[1] == "None"
+
+def test_process_tradeplan_missing_plan(trade_plan_fixture):
+    """
+    Test that a missing 'Plan' column defaults to 'P1'.
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['09:33'], 'Premium': [2.5], 'Spread': ['10-15'], 'Stop': ['1.5x'],
+        'Strategy': ['EMA520'], 'Qty': [2], 'profittarget': [50.0], 'OptionType': ['P']
+    })
+    process_tradeplan(conn, trade_plan_df, trade_condition_ids)
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    assert cursor.fetchone()[0] == 1
+
+def test_process_tradeplan_invalid_strategy(trade_plan_fixture):
+    """
+    Test that an invalid 'Strategy' defaults to 'EMA520'.
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['09:33'], 'Premium': [2.5], 'Spread': ['10-15'], 'Stop': ['1.5x'],
+        'Strategy': ['INVALID'], 'Plan': ['P1'], 'Qty': [2], 'profittarget': [50.0], 'OptionType': ['P']
+    })
+    with pytest.raises(ValueError, match="Unsupported Strategy 'INVALID' in CSV."):
+        process_tradeplan(conn, trade_plan_df, trade_condition_ids)
