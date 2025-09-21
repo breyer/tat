@@ -382,6 +382,34 @@ def trade_plan_fixture(db_connection):
     create_schedules(db_connection, ['P1', 'P2'], trade_condition_ids, accounts, ['09:33', '10:00'])
     return db_connection, trade_condition_ids
 
+def test_process_tradeplan_with_minpremium(trade_plan_fixture):
+    """
+    Test that process_tradeplan correctly processes the MinPremium column.
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['09:33'],
+        'Premium': [2.5],
+        'MinPremium': [1.2],
+        'Spread': ['10-15'],
+        'Stop': ['1.5x'],
+        'Strategy': ['EMA520'],
+        'Plan': ['P1'],
+        'Qty': [2],
+        'profittarget': [50.0],
+        'OptionType': ['P']
+    })
+
+    process_tradeplan(conn, trade_plan_df, trade_condition_ids)
+
+    cursor = conn.cursor()
+
+    # Verification for the PUT template (P1 at 09:33)
+    cursor.execute("SELECT LongMinPremium FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    put_template_res = cursor.fetchone()
+    assert put_template_res[0] == 1.2
+
+
 def test_process_tradeplan_updates_and_activates_schedules(trade_plan_fixture):
     """
     Test that process_tradeplan correctly updates templates and activates schedules
