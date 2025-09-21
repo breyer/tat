@@ -1270,7 +1270,7 @@ def main():
         # Save the processed DataFrame back to tradeplan.csv
         try:
             # Select only relevant columns for saving, matching the desired final output
-            columns_to_save = ['Hour:Minute', 'Premium', 'Spread', 'Stop', 'Strategy', 'Plan', 'Qty', 'profittarget', 'OptionType']
+            columns_to_save = ['Hour:Minute', 'Premium', 'MinPremium', 'Spread', 'Stop', 'Strategy', 'Plan', 'Qty', 'profittarget', 'OptionType']
             # Filter to existing columns in the DataFrame to avoid errors if some are optional and not present
             existing_columns_to_save = [col for col in columns_to_save if col in data.columns]
             data.to_csv(csv_path, index=False, columns=existing_columns_to_save)
@@ -1337,7 +1337,7 @@ def main():
         print("\nFinal tradeplan.csv:")
         if not data.empty:
             # Define the columns in the desired order for the final print
-            final_print_columns = ['Hour:Minute', 'Premium', 'Spread', 'Stop', 'Strategy', 'Plan', 'Qty']
+            final_print_columns = ['Hour:Minute', 'Premium', 'MinPremium', 'Spread', 'Stop', 'Strategy', 'Plan', 'Qty']
             if 'profittarget' in data.columns: # Add profittarget if it exists
                 final_print_columns.append('profittarget')
             if 'OptionType' in data.columns: # Add OptionType if it exists
