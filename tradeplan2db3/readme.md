@@ -43,6 +43,7 @@ Your CSV file is the heart of the process. It should contain the following colum
 |----------------|-------------------------------------------------------------|----------------|
 | `Hour:Minute`  | The entry time for the trade.                               | `13:15`        |
 | `Premium`      | The target premium (maps to `TargetMax` or `TargetMaxCall`). | `2.0`          |
+| `MinPremium`   | The minimum premium for the long leg.                       | `0.5`          |
 | `Spread`       | The desired long widths, separated by commas or dashes.     | `20,25,30`     |
 | `Stop`         | The stop-loss multiple.                                     | `1.25`         |
 | `Strategy`     | The EMA strategy (`EMA520`, `EMA540`, `EMA2040`).            | `EMA2040`      |
