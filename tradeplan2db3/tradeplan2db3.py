@@ -826,7 +826,7 @@ def update_put_template(conn, template_name, premium, min_premium, spread, stop_
     tid = row[0]
     conn.execute("""
         UPDATE TradeTemplate
-        SET TargetMax = ?, LongWidth = ?, StopMultiple = ?, LongMinPremium = ?
+        SET TargetMax = ?, LongWidth = ?, StopMultiple = ?, TargetMin = ?
         WHERE TradeTemplateID = ?
     """, (premium, spread, stop_multiple, min_premium, tid))
     logging.debug(f"Updated base fields for PUT template {template_name} (ID: {tid}).")
@@ -861,7 +861,7 @@ def update_call_template(conn, template_name, premium, min_premium, spread, stop
     # StopMultiple and LongWidth are common.
     conn.execute("""
         UPDATE TradeTemplate
-        SET TargetMaxCall = ?, LongWidth = ?, StopMultiple = ?, LongMinPremium = ?
+        SET TargetMaxCall = ?, LongWidth = ?, StopMultiple = ?, TargetMinCall = ?
         WHERE TradeTemplateID = ?
     """, (premium, spread, stop_multiple, min_premium, tid)) # Assuming premium maps to TargetMaxCall for CALLs
     logging.debug(f"Updated base fields for CALL template {template_name} (ID: {tid}).")
