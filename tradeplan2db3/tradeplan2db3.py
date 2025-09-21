@@ -1078,6 +1078,7 @@ def process_tradeplan(conn, data, trade_condition_ids):
 
         except Exception as e_row:
             logging.error(f"Error processing CSV row {idx+1} (Data: {row.to_dict()}): {e_row}", exc_info=True)
+            raise e_row # Re-raise to trigger the main try/except for rollback
 
     logging.info("Finished processing all rows in tradeplan CSV.")
 
@@ -1168,8 +1169,9 @@ def main():
             print("Force-initializing database. This will delete existing templates and schedules.")
             accounts_for_init = get_accounts() 
             initialize_database(conn, plan_count, force=True, accounts=accounts_for_init, times=times)
-            logging.info(f"Database force-initialized with {plan_count} plans.")
-            sys.exit(0) 
+            logging.info(f"Database force-initialized with {plan_count} plans. Exiting due to '--force-initialize' flag.")
+            print("Database force-initialized successfully. Exiting.")
+            sys.exit(0) # IMPORTANT: Exit after initialization
 
         if args.initialize:
             cursor = conn.execute("SELECT Name FROM TradeTemplate WHERE Name LIKE 'PUT SPREAD (%) P%' OR Name LIKE 'CALL SPREAD (%) P%'")
@@ -1183,8 +1185,9 @@ def main():
             print("Initializing database: Ensuring all required entries exist.")
             accounts_for_init = get_accounts()
             initialize_database(conn, plan_count_for_init, force=False, accounts=accounts_for_init, times=times)
-            logging.info(f"Database initialized/verified for up to P{plan_count_for_init} plans.")
-            sys.exit(0) 
+            logging.info(f"Database initialized/verified for up to P{plan_count_for_init} plans. Exiting due to '--initialize' flag.")
+            print("Database initialized successfully. Exiting.")
+            sys.exit(0) # IMPORTANT: Exit after initialization
 
         # --- REGULAR CSV PROCESSING ---
         logging.info(f"Loading trade plan from CSV: {csv_path}")
