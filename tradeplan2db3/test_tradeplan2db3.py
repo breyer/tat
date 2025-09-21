@@ -382,22 +382,22 @@ def trade_plan_fixture(db_connection):
     create_schedules(db_connection, ['P1', 'P2'], trade_condition_ids, accounts, ['09:33', '10:00'])
     return db_connection, trade_condition_ids
 
-def test_process_tradeplan_with_minpremium(trade_plan_fixture):
+def test_process_tradeplan_min_premium_mapping(trade_plan_fixture):
     """
-    Test that process_tradeplan correctly processes the MinPremium column.
+    Test that process_tradeplan correctly maps MinPremium to TargetMin/TargetMinCall.
     """
     conn, trade_condition_ids = trade_plan_fixture
     trade_plan_df = pd.DataFrame({
-        'Hour:Minute': ['09:33'],
-        'Premium': [2.5],
-        'MinPremium': [1.2],
-        'Spread': ['10-15'],
-        'Stop': ['1.5x'],
-        'Strategy': ['EMA520'],
-        'Plan': ['P1'],
-        'Qty': [2],
-        'profittarget': [50.0],
-        'OptionType': ['P']
+        'Hour:Minute': ['09:33', '10:00'],
+        'Premium': [2.5, 3.0],
+        'MinPremium': [1.2, 1.8],
+        'Spread': ['10-15', '20-25'],
+        'Stop': ['1.5x', '2x'],
+        'Strategy': ['EMA520', 'EMA540'],
+        'Plan': ['P1', 'P2'],
+        'Qty': [2, 4],
+        'profittarget': [50.0, 70.0],
+        'OptionType': ['P', 'C']
     })
 
     process_tradeplan(conn, trade_plan_df, trade_condition_ids)
@@ -405,9 +405,14 @@ def test_process_tradeplan_with_minpremium(trade_plan_fixture):
     cursor = conn.cursor()
 
     # Verification for the PUT template (P1 at 09:33)
-    cursor.execute("SELECT LongMinPremium FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    cursor.execute("SELECT TargetMin FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
     put_template_res = cursor.fetchone()
     assert put_template_res[0] == 1.2
+
+    # Verification for the CALL template (P2 at 10:00)
+    cursor.execute("SELECT TargetMinCall FROM TradeTemplate WHERE Name = ?", ('CALL SPREAD (10:00) P2',))
+    call_template_res = cursor.fetchone()
+    assert call_template_res[0] == 1.8
 
 
 def test_process_tradeplan_updates_and_activates_schedules(trade_plan_fixture):
@@ -434,7 +439,7 @@ def test_process_tradeplan_updates_and_activates_schedules(trade_plan_fixture):
     cursor = conn.cursor()
 
     # Verification for the PUT template (P1 at 09:33)
-    cursor.execute("SELECT TargetMax, LongMinPremium, LongWidth, StopMultiple, ProfitTarget FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    cursor.execute("SELECT TargetMax, TargetMin, LongWidth, StopMultiple, ProfitTarget FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
     put_template_res = cursor.fetchone()
     assert put_template_res[0] == 2.5
     assert put_template_res[1] == 1.0
@@ -443,7 +448,7 @@ def test_process_tradeplan_updates_and_activates_schedules(trade_plan_fixture):
     assert put_template_res[4] == 50.0
 
     # Verification for the CALL template (P2 at 10:00)
-    cursor.execute("SELECT TargetMaxCall, LongMinPremium, LongWidth, StopMultiple, ProfitTarget FROM TradeTemplate WHERE Name = ?", ('CALL SPREAD (10:00) P2',))
+    cursor.execute("SELECT TargetMaxCall, TargetMinCall, LongWidth, StopMultiple, ProfitTarget FROM TradeTemplate WHERE Name = ?", ('CALL SPREAD (10:00) P2',))
     call_template_res = cursor.fetchone()
     assert call_template_res[0] == 3.0
     assert call_template_res[1] == 1.5
