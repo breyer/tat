@@ -382,41 +382,58 @@ def trade_plan_fixture(db_connection):
     create_schedules(db_connection, ['P1', 'P2'], trade_condition_ids, accounts, ['09:33', '10:00'])
     return db_connection, trade_condition_ids
 
-def test_process_tradeplan_put_only(trade_plan_fixture):
+def test_process_tradeplan_updates_and_activates_schedules(trade_plan_fixture):
     """
-    Test process_tradeplan with a single PUT entry.
-    """
-    conn, trade_condition_ids = trade_plan_fixture
-    trade_plan_df = pd.DataFrame({
-        'Hour:Minute': ['09:33'], 'Premium': [2.5], 'Spread': ['10-15'], 'Stop': ['1.5x'],
-        'Strategy': ['EMA520'], 'Plan': ['P1'], 'Qty': [2], 'profittarget': [50.0], 'OptionType': ['P']
-    })
-    process_tradeplan(conn, trade_plan_df, trade_condition_ids)
-
-    cursor = conn.cursor()
-    cursor.execute("SELECT ProfitTarget, QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('PUT SPREAD (09:33) P1',))
-    res = cursor.fetchone()
-    assert res[0] == 50.0
-    assert res[1] == 2
-    assert res[2] == 1
-
-def test_process_tradeplan_call_only(trade_plan_fixture):
-    """
-    Test process_tradeplan with a single CALL entry.
+    Test that process_tradeplan correctly updates templates and activates schedules
+    based on a comprehensive CSV including the new MinPremium field.
     """
     conn, trade_condition_ids = trade_plan_fixture
     trade_plan_df = pd.DataFrame({
-        'Hour:Minute': ['09:33'], 'Premium': [2.5], 'Spread': ['10-15'], 'Stop': ['1.5x'],
-        'Strategy': ['EMA520'], 'Plan': ['P1'], 'Qty': [3], 'profittarget': [60.0], 'OptionType': ['C']
+        'Hour:Minute': ['09:33', '10:00'],
+        'Premium': [2.5, 3.0],
+        'MinPremium': [1.0, 1.5],
+        'Spread': ['10-15', '20-25'],
+        'Stop': ['1.5x', '2x'],
+        'Strategy': ['EMA520', 'EMA540'],
+        'Plan': ['P1', 'P2'],
+        'Qty': [2, 4],
+        'profittarget': [50.0, 70.0],
+        'OptionType': ['P', 'C']
     })
+
     process_tradeplan(conn, trade_plan_df, trade_condition_ids)
 
     cursor = conn.cursor()
-    cursor.execute("SELECT ProfitTarget, QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('CALL SPREAD (09:33) P1',))
-    res = cursor.fetchone()
-    assert res[0] == 60.0
-    assert res[1] == 3
-    assert res[2] == 1
+
+    # Verification for the PUT template (P1 at 09:33)
+    cursor.execute("SELECT TargetMax, LongMinPremium, LongWidth, StopMultiple, ProfitTarget FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    put_template_res = cursor.fetchone()
+    assert put_template_res[0] == 2.5
+    assert put_template_res[1] == 1.0
+    assert put_template_res[2] == '10-15'
+    assert put_template_res[3] == 1.5
+    assert put_template_res[4] == 50.0
+
+    # Verification for the CALL template (P2 at 10:00)
+    cursor.execute("SELECT TargetMaxCall, LongMinPremium, LongWidth, StopMultiple, ProfitTarget FROM TradeTemplate WHERE Name = ?", ('CALL SPREAD (10:00) P2',))
+    call_template_res = cursor.fetchone()
+    assert call_template_res[0] == 3.0
+    assert call_template_res[1] == 1.5
+    assert call_template_res[2] == '20-25'
+    assert call_template_res[3] == 2.0
+    assert call_template_res[4] == 70.0
+
+    # Verification for the PUT schedule activation
+    cursor.execute("SELECT QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('PUT SPREAD (09:33) P1',))
+    put_schedule_res = cursor.fetchone()
+    assert put_schedule_res[0] == 2
+    assert put_schedule_res[1] == 1
+
+    # Verification for the CALL schedule activation
+    cursor.execute("SELECT QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('CALL SPREAD (10:00) P2',))
+    call_schedule_res = cursor.fetchone()
+    assert call_schedule_res[0] == 4
+    assert call_schedule_res[1] == 1
 
 def test_process_tradeplan_no_option_type(trade_plan_fixture):
     """
