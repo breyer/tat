@@ -1,0 +1,144 @@
+===================================================================
+User-Specific Ignores
+Add your own personal ignores here
+===================================================================
+.pytest_cache
+/casinodb/
+/logs/
+.json
+.tar.gz
+/way4_py311
+.way4
+strategy.sh
+strategy2.sh
+
+
+===================================================================
+Standard Python .gitignore
+See https://github.com/github/gitignore/blob/main/Python.gitignore
+===================================================================
+Byte-compiled / optimized / DLL files
+pycache/
+*.py[cod]
+*$py.class
+
+C extensions
+*.so
+
+Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+PyInstaller
+Usually these files are written by a python script from a template
+before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.spec
+
+Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+Translations
+*.mo
+*.pot
+
+Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+Flask stuff:
+instance/
+.webassets-cache
+
+Scrapy stuff:
+.scrapy
+
+Sphinx documentation
+docs/_build/
+
+PyBuilder
+target/
+
+===================================================================
+Project-Specific Ignores
+Based on your file list
+===================================================================
+Virtual Environment
+This looks like your project's virtual environment directory.
+Never commit this, as it contains machine-specific paths and packages.
+.way4/
+
+Logs and Reports
+Log files are generated during runtime and can become very large.
+They should not be version controlled.
+logs/
+reports/
+*.log
+
+Generated Data & Plots
+These are outputs from your scripts, not source files.
+Re-generate them from the source scripts when needed.
+*.csv
+*.png
+*.html
+
+Databases
+Database files and directories contain data, not code.
+They can grow very large and change frequently.
+casinodb/
+lmdb*/
+*.db
+*.sqlite
+
+Configuration directories for specific libraries or tools
+_arctic_cfg/
+
+===================================================================
+General OS / Editor Ignores
+===================================================================
+OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+Editor-specific files
+.idea/
+.vscode/
+*.swp
+*~
