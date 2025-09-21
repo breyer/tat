@@ -3,14 +3,11 @@ User-Specific Ignores
 Add your own personal ignores here
 ===================================================================
 .pytest_cache
-/casinodb/
+/__pycache__
 /logs/
 .json
 .tar.gz
-/way4_py311
-.way4
-strategy.sh
-strategy2.sh
+
 
 
 ===================================================================
