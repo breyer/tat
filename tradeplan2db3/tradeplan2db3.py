@@ -801,13 +801,14 @@ def update_template_profit_target(conn, template_id, profit_target_percentage):
     """, (profit_target_type_val, profit_target_val, order_id_profit_target_val, template_id))
 
 
-def update_put_template(conn, template_name, premium, spread, stop_multiple, profit_target_percentage):
+def update_put_template(conn, template_name, premium, min_premium, spread, stop_multiple, profit_target_percentage):
     """Updates the key parameters of a specific PUT trade template.
 
     Args:
         conn (sqlite3.Connection): The database connection object.
         template_name (str): The name of the PUT template to update.
         premium (float): The new 'TargetMax' value.
+        min_premium (float): The new 'LongMinPremium' value.
         spread (str): The new 'LongWidth' value (e.g., "20,25,30").
         stop_multiple (float): The new 'StopMultiple' value.
         profit_target_percentage (float | None): The profit target percentage.
@@ -825,20 +826,21 @@ def update_put_template(conn, template_name, premium, spread, stop_multiple, pro
     tid = row[0]
     conn.execute("""
         UPDATE TradeTemplate
-        SET TargetMax = ?, LongWidth = ?, StopMultiple = ?
+        SET TargetMax = ?, LongWidth = ?, StopMultiple = ?, LongMinPremium = ?
         WHERE TradeTemplateID = ?
-    """, (premium, spread, stop_multiple, tid))
+    """, (premium, spread, stop_multiple, min_premium, tid))
     logging.debug(f"Updated base fields for PUT template {template_name} (ID: {tid}).")
     update_template_profit_target(conn, tid, profit_target_percentage) # Update profit target fields
 
 
-def update_call_template(conn, template_name, premium, spread, stop_multiple, profit_target_percentage):
+def update_call_template(conn, template_name, premium, min_premium, spread, stop_multiple, profit_target_percentage):
     """Updates the key parameters of a specific CALL trade template.
 
     Args:
         conn (sqlite3.Connection): The database connection object.
         template_name (str): The name of the CALL template to update.
         premium (float): The new 'TargetMaxCall' value.
+        min_premium (float): The new 'LongMinPremium' value.
         spread (str): The new 'LongWidth' value.
         stop_multiple (float): The new 'StopMultiple' value.
         profit_target_percentage (float | None): The profit target percentage.
@@ -859,9 +861,9 @@ def update_call_template(conn, template_name, premium, spread, stop_multiple, pr
     # StopMultiple and LongWidth are common.
     conn.execute("""
         UPDATE TradeTemplate
-        SET TargetMaxCall = ?, LongWidth = ?, StopMultiple = ?
+        SET TargetMaxCall = ?, LongWidth = ?, StopMultiple = ?, LongMinPremium = ?
         WHERE TradeTemplateID = ?
-    """, (premium, spread, stop_multiple, tid)) # Assuming premium maps to TargetMaxCall for CALLs
+    """, (premium, spread, stop_multiple, min_premium, tid)) # Assuming premium maps to TargetMaxCall for CALLs
     logging.debug(f"Updated base fields for CALL template {template_name} (ID: {tid}).")
     update_template_profit_target(conn, tid, profit_target_percentage) # Update profit target fields
 
@@ -993,6 +995,9 @@ def process_tradeplan(conn, data, trade_condition_ids):
 
             premium_val = row.get('Premium')
             premium = float(premium_val) if pd.notna(premium_val) else 0.0
+
+            min_premium_val = row.get('MinPremium')
+            min_premium = float(min_premium_val) if pd.notna(min_premium_val) else None
             
             spread_str = str(row.get('Spread', '')) 
             
@@ -1060,12 +1065,12 @@ def process_tradeplan(conn, data, trade_condition_ids):
             for opt_to_proc in option_types_to_process:
                 if opt_to_proc == 'PUT':
                     template_name = f"PUT SPREAD ({hour_minute}) {plan_suffix}"
-                    update_put_template(conn, template_name, premium, spread_str, stop_multiple, profit_target_csv_value)
+                    update_put_template(conn, template_name, premium, min_premium, spread_str, stop_multiple, profit_target_csv_value)
                     update_schedule_master_entry(conn, template_name, qty_override, current_put_strat_key,
                                                  cond_id_put, cond_desc_put, plan_suffix, "PUT")
                 elif opt_to_proc == 'CALL':
                     template_name = f"CALL SPREAD ({hour_minute}) {plan_suffix}"
-                    update_call_template(conn, template_name, premium, spread_str, stop_multiple, profit_target_csv_value)
+                    update_call_template(conn, template_name, premium, min_premium, spread_str, stop_multiple, profit_target_csv_value)
                     update_schedule_master_entry(conn, template_name, qty_override, current_call_strat_key,
                                                  cond_id_call, cond_desc_call, plan_suffix, "CALL")
             
@@ -1192,7 +1197,7 @@ def main():
             logging.info(f"Successfully loaded {len(data)} entries from {csv_path}.")
 
 
-            numeric_cols = ['Premium', 'Qty', 'PnL Rank', 'profittarget'] 
+            numeric_cols = ['Premium', 'MinPremium', 'Qty', 'PnL Rank', 'profittarget']
             for col in numeric_cols:
                 if col in data.columns:
                     data[col] = pd.to_numeric(data[col], errors='coerce')
