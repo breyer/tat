@@ -2,6 +2,9 @@
 
 This script automates the process of launching, logging into, and connecting the Trade Automation Toolbox (TAT) to your broker. It uses UI automation to simulate keyboard and mouse interactions, saving you from the repetitive manual steps required each time you start the application.
 
+## TAT compatible version
+- **Tested** Version 4.0
+
 ## Features
 
 - **Automatic Launch**: Starts the Trade Automation Toolbox (UWP app).
