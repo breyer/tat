@@ -1,4 +1,4 @@
-"""Automates the login process for the Trade Automation Toolbox (TAT).
+"""Automates the login process for the Trade Automation Toolbox (TAT) 4.0!
 
 This script checks if the TAT application is running, starts it if it's not,
 and then automates the UI interactions to log in with user credentials and
@@ -165,7 +165,7 @@ def login_to_tat(email, password):
     logging.info("TAT window activated. Proceeding with login.")
 
     # Navigate to email field
-    pyautogui.press('tab', presses=4, interval=0.5)
+    pyautogui.press('tab', presses=5, interval=0.5)
 
     # Enter email
     pyautogui.hotkey('ctrl', 'a')
@@ -188,7 +188,7 @@ def login_to_tat(email, password):
 
     # Connect to broker
     time.sleep(5)
-    pyautogui.press('tab', presses=2)
+    pyautogui.press('tab', presses=3)
     pyautogui.press('enter')
     logging.info("Connection to broker initiated.")
 
