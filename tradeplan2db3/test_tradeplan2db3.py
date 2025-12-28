@@ -115,6 +115,11 @@ def test_parse_arguments():
         assert args.distribution is False
         assert args.force_initialize is None
         assert args.initialize is False
+        assert args.db_path == 'data.db3'
+
+    with patch('sys.argv', ['tradeplan2db3.py', '--db-path', 'data88.db3']):
+        args = parse_arguments()
+        assert args.db_path == 'data88.db3'
 
 def test_get_schedule_times():
     """
@@ -212,8 +217,11 @@ def db_connection():
             TargetMin REAL,
             TargetMax REAL,
             LongType TEXT,
+            LongTypeCall TEXT,
             LongWidth TEXT,
+            LongWidthCall TEXT,
             LongMaxPremium REAL,
+            LongMaxPremiumCall REAL,
             QtyDefault INTEGER,
             FillAttempts INTEGER,
             FillWait INTEGER,
@@ -260,6 +268,7 @@ def db_connection():
             StopRelITM REAL,
             StopRelITMMinutes INTEGER,
             LongMaxWidth INTEGER,
+            LongMaxWidthCall INTEGER,
             ExitMinutesInTrade INTEGER,
             Preference TEXT,
             ReEnterClose INTEGER,
@@ -270,6 +279,7 @@ def db_connection():
             ReEnterExpirationMinute INTEGER,
             ReEnterMaxEntries INTEGER,
             DisableNarrowerLong INTEGER,
+            DisableNarrowerLongCall INTEGER,
             Strategy TEXT,
             MinOTM REAL,
             ShortPutTarget REAL,
@@ -295,6 +305,7 @@ def db_connection():
             PutRatio INTEGER,
             CallRatio INTEGER,
             LongMinPremium REAL,
+            LongMinPremiumCall REAL,
             ProfitTargetTradePct REAL,
             ProfitTarget2 REAL,
             ProfitTarget2TradePct REAL,
@@ -405,14 +416,16 @@ def test_process_tradeplan_min_premium_mapping(trade_plan_fixture):
     cursor = conn.cursor()
 
     # Verification for the PUT template (P1 at 09:33)
-    cursor.execute("SELECT TargetMin FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    cursor.execute("SELECT TargetMin, LongMinPremium FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
     put_template_res = cursor.fetchone()
     assert put_template_res[0] == 1.2
+    assert put_template_res[1] == 1.2
 
     # Verification for the CALL template (P2 at 10:00)
-    cursor.execute("SELECT TargetMinCall FROM TradeTemplate WHERE Name = ?", ('CALL SPREAD (10:00) P2',))
+    cursor.execute("SELECT TargetMinCall, LongMinPremiumCall FROM TradeTemplate WHERE Name = ?", ('CALL SPREAD (10:00) P2',))
     call_template_res = cursor.fetchone()
     assert call_template_res[0] == 1.8
+    assert call_template_res[1] == 1.8
 
 
 def test_process_tradeplan_updates_and_activates_schedules(trade_plan_fixture):
@@ -439,22 +452,25 @@ def test_process_tradeplan_updates_and_activates_schedules(trade_plan_fixture):
     cursor = conn.cursor()
 
     # Verification for the PUT template (P1 at 09:33)
-    cursor.execute("SELECT TargetMax, TargetMin, LongWidth, StopMultiple, ProfitTarget FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    cursor.execute("SELECT TargetMax, TargetMin, LongWidth, StopMultiple, ProfitTarget, QtyDefault FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
     put_template_res = cursor.fetchone()
     assert put_template_res[0] == 2.5
     assert put_template_res[1] == 1.0
     assert put_template_res[2] == '10-15'
     assert put_template_res[3] == 1.5
     assert put_template_res[4] == 50.0
+    assert put_template_res[5] == 2
 
     # Verification for the CALL template (P2 at 10:00)
-    cursor.execute("SELECT TargetMaxCall, TargetMinCall, LongWidth, StopMultiple, ProfitTarget FROM TradeTemplate WHERE Name = ?", ('CALL SPREAD (10:00) P2',))
+    cursor.execute("SELECT TargetMaxCall, TargetMinCall, LongWidth, LongWidthCall, StopMultiple, ProfitTarget, QtyDefault FROM TradeTemplate WHERE Name = ?", ('CALL SPREAD (10:00) P2',))
     call_template_res = cursor.fetchone()
     assert call_template_res[0] == 3.0
     assert call_template_res[1] == 1.5
     assert call_template_res[2] == '20-25'
-    assert call_template_res[3] == 2.0
-    assert call_template_res[4] == 70.0
+    assert call_template_res[3] == '20-25'
+    assert call_template_res[4] == 2.0
+    assert call_template_res[5] == 70.0
+    assert call_template_res[6] == 4
 
     # Verification for the PUT schedule activation
     cursor.execute("SELECT QtyOverride, IsActive FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('PUT SPREAD (09:33) P1',))
@@ -493,6 +509,32 @@ def test_process_tradeplan_no_option_type(trade_plan_fixture):
     assert call_res[0] == 70.0
     assert call_res[1] == 4
     assert call_res[2] == 1
+
+def test_process_tradeplan_cli_qty_override(trade_plan_fixture):
+    """
+    Test that an explicit CLI qty override wins over CSV Qty values.
+    """
+    conn, trade_condition_ids = trade_plan_fixture
+    trade_plan_df = pd.DataFrame({
+        'Hour:Minute': ['09:33'],
+        'Premium': [2.5],
+        'Spread': ['10-15'],
+        'Stop': ['1.5x'],
+        'Strategy': ['EMA520'],
+        'Plan': ['P1'],
+        'Qty': [1],
+        'profittarget': [50.0],
+        'OptionType': ['P']
+    })
+
+    process_tradeplan(conn, trade_plan_df, trade_condition_ids, qty_cli_override=5)
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT QtyDefault FROM TradeTemplate WHERE Name = ?", ('PUT SPREAD (09:33) P1',))
+    assert cursor.fetchone()[0] == 5
+
+    cursor.execute("SELECT QtyOverride FROM TradeTemplate tt JOIN ScheduleMaster sm ON tt.TradeTemplateID = sm.TradeTemplateID WHERE tt.Name = ?", ('PUT SPREAD (09:33) P1',))
+    assert cursor.fetchone()[0] == 5
 
 def test_process_tradeplan_profittarget_100(trade_plan_fixture):
     """

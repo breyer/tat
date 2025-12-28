@@ -62,6 +62,11 @@ def parse_arguments():
             'TradeTemplates, and ScheduleMaster entries without deleting existing data'
         )
     )
+    parser.add_argument(
+        '--db-path',
+        default='data.db3',
+        help='Path to the Trade Automation Toolbox SQLite database file (default: data.db3)'
+    )
     return parser.parse_args()
 
 
@@ -306,12 +311,15 @@ def create_trade_templates(conn, plan_suffixes, times):
                 base_template = {
                     "Name": "", # To be set
                     "TradeType": "", # To be set
-                    "TargetType": "Credit",
+                    "TargetType": "Premium",
                     "TargetMin": 1.0,
                     "TargetMax": 4.0, # Default for PUT, will be 0.0 for CALL
                     "LongType": "Width",
+                    "LongTypeCall": "Width",
                     "LongWidth": "20,25,30",
+                    "LongWidthCall": "20,25,30",
                     "LongMaxPremium": None,
+                    "LongMaxPremiumCall": None,
                     "QtyDefault": 1,
                     "FillAttempts": 5,
                     "FillWait": 15,
@@ -358,8 +366,9 @@ def create_trade_templates(conn, plan_suffixes, times):
                     "StopRelITM": None,
                     "StopRelITMMinutes": 0,
                     "LongMaxWidth": 0,
+                    "LongMaxWidthCall": 0,
                     "ExitMinutesInTrade": None,
-                    "Preference": "Highest Credit/Delta",
+                    "Preference": "Highest Premium/Delta",
                     "ReEnterClose": 0,
                     "ReEnterStop": 0,
                     "ReEnterProfitTarget": 0,
@@ -368,6 +377,7 @@ def create_trade_templates(conn, plan_suffixes, times):
                     "ReEnterExpirationMinute": 0,
                     "ReEnterMaxEntries": 0,
                     "DisableNarrowerLong": 0,
+                    "DisableNarrowerLongCall": 0,
                     "IsDeleted": 0,
                     "Strategy": "", # To be set
                     "MinOTM": 0.0,
@@ -385,15 +395,16 @@ def create_trade_templates(conn, plan_suffixes, times):
                     "LongCallDTE": 0,
                     "ExitDTE": 0,
                     "ExtendedHourStop": 0,
-                    "TargetTypeCall": "Credit", # Specific to CALL, but part of the table structure
+                    "TargetTypeCall": "Premium", # Specific to CALL, but part of the table structure
                     "TargetMinCall": 1.0,      # Specific to CALL
                     "TargetMaxCall": 4.0,      # Specific to CALL, will be updated
-                    "PreferenceCall": "Highest Credit/Delta", # Specific to CALL
+                    "PreferenceCall": "Highest Premium/Delta", # Specific to CALL
                     "MinOTMCall": 0.0,         # Specific to CALL
                     "ExitOrderLimit": 0,
                     "PutRatio": 1,
                     "CallRatio": 1,
                     "LongMinPremium": None,
+                    "LongMinPremiumCall": None,
                     "ProfitTargetTradePct": 100.0,
                     "ProfitTarget2": None,
                     "ProfitTarget2TradePct": 100.0,
@@ -801,7 +812,8 @@ def update_template_profit_target(conn, template_id, profit_target_percentage):
     """, (profit_target_type_val, profit_target_val, order_id_profit_target_val, template_id))
 
 
-def update_put_template(conn, template_name, premium, min_premium, spread, stop_multiple, profit_target_percentage):
+def update_put_template(conn, template_name, premium, min_premium, spread,
+                        stop_multiple, profit_target_percentage, qty_override):
     """Updates the key parameters of a specific PUT trade template.
 
     Args:
@@ -812,6 +824,7 @@ def update_put_template(conn, template_name, premium, min_premium, spread, stop_
         spread (str): The new 'LongWidth' value (e.g., "20,25,30").
         stop_multiple (float): The new 'StopMultiple' value.
         profit_target_percentage (float | None): The profit target percentage.
+        qty_override (int): Quantity that should become the template default.
     """
     cursor = conn.execute(
         "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
@@ -826,14 +839,17 @@ def update_put_template(conn, template_name, premium, min_premium, spread, stop_
     tid = row[0]
     conn.execute("""
         UPDATE TradeTemplate
-        SET TargetMax = ?, LongWidth = ?, StopMultiple = ?, TargetMin = ?
+        SET TargetMax = ?, LongWidth = ?, StopMultiple = ?, TargetMin = ?,
+            QtyDefault = ?, LongMinPremium = ?
         WHERE TradeTemplateID = ?
-    """, (premium, spread, stop_multiple, min_premium, tid))
+    """, (premium, spread, stop_multiple, min_premium,
+          qty_override, min_premium, tid))
     logging.debug(f"Updated base fields for PUT template {template_name} (ID: {tid}).")
     update_template_profit_target(conn, tid, profit_target_percentage) # Update profit target fields
 
 
-def update_call_template(conn, template_name, premium, min_premium, spread, stop_multiple, profit_target_percentage):
+def update_call_template(conn, template_name, premium, min_premium, spread,
+                         stop_multiple, profit_target_percentage, qty_override):
     """Updates the key parameters of a specific CALL trade template.
 
     Args:
@@ -844,6 +860,7 @@ def update_call_template(conn, template_name, premium, min_premium, spread, stop
         spread (str): The new 'LongWidth' value.
         stop_multiple (float): The new 'StopMultiple' value.
         profit_target_percentage (float | None): The profit target percentage.
+        qty_override (int): Quantity that should become the template default.
     """
     cursor = conn.execute(
         "SELECT TradeTemplateID FROM TradeTemplate WHERE Name = ?",
@@ -861,9 +878,11 @@ def update_call_template(conn, template_name, premium, min_premium, spread, stop
     # StopMultiple and LongWidth are common.
     conn.execute("""
         UPDATE TradeTemplate
-        SET TargetMaxCall = ?, LongWidth = ?, StopMultiple = ?, TargetMinCall = ?
+        SET TargetMaxCall = ?, LongWidth = ?, LongWidthCall = ?,
+            StopMultiple = ?, TargetMinCall = ?, QtyDefault = ?, LongMinPremiumCall = ?
         WHERE TradeTemplateID = ?
-    """, (premium, spread, stop_multiple, min_premium, tid)) # Assuming premium maps to TargetMaxCall for CALLs
+    """, (premium, spread, spread, stop_multiple, min_premium,
+          qty_override, min_premium, tid)) # Assuming premium maps to TargetMaxCall for CALLs
     logging.debug(f"Updated base fields for CALL template {template_name} (ID: {tid}).")
     update_template_profit_target(conn, tid, profit_target_percentage) # Update profit target fields
 
@@ -929,7 +948,7 @@ def update_schedule_master_entry(conn, template_name, qty_override, ema_strategy
         logging.warning(f"No schedules found (or no changes made) for {template_name} (TemplateID: {trade_template_id}) to activate/update. This might be normal if schedules are missing or already had these values (excluding IsActive).")
 
 
-def process_tradeplan(conn, data, trade_condition_ids):
+def process_tradeplan(conn, data, trade_condition_ids, qty_cli_override=None):
     """Processes the trade plan DataFrame to update the database.
 
     This function iterates through each row of the trade plan data,
@@ -1010,6 +1029,8 @@ def process_tradeplan(conn, data, trade_condition_ids):
             
             qty_val = row.get('Qty')
             qty_override = int(qty_val) if pd.notna(qty_val) else 1
+            if qty_cli_override is not None:
+                qty_override = int(qty_cli_override)
 
 
             # Profit Target from CSV (already converted to numeric/NaN in main)
@@ -1065,12 +1086,14 @@ def process_tradeplan(conn, data, trade_condition_ids):
             for opt_to_proc in option_types_to_process:
                 if opt_to_proc == 'PUT':
                     template_name = f"PUT SPREAD ({hour_minute}) {plan_suffix}"
-                    update_put_template(conn, template_name, premium, min_premium, spread_str, stop_multiple, profit_target_csv_value)
+                    update_put_template(conn, template_name, premium, min_premium, spread_str,
+                                        stop_multiple, profit_target_csv_value, qty_override)
                     update_schedule_master_entry(conn, template_name, qty_override, current_put_strat_key,
                                                  cond_id_put, cond_desc_put, plan_suffix, "PUT")
                 elif opt_to_proc == 'CALL':
                     template_name = f"CALL SPREAD ({hour_minute}) {plan_suffix}"
-                    update_call_template(conn, template_name, premium, min_premium, spread_str, stop_multiple, profit_target_csv_value)
+                    update_call_template(conn, template_name, premium, min_premium, spread_str,
+                                         stop_multiple, profit_target_csv_value, qty_override)
                     update_schedule_master_entry(conn, template_name, qty_override, current_call_strat_key,
                                                  cond_id_call, cond_desc_call, plan_suffix, "CALL")
             
@@ -1123,9 +1146,10 @@ def main():
     logging.info(f"Arguments: {args}")
 
 
-    db_path = os.path.abspath('data.db3')
+    db_path = os.path.abspath(args.db_path)
     csv_path = os.path.abspath('tradeplan.csv')
-    backup_dir = os.path.abspath('tradeplan-backup')
+    db_stem = os.path.splitext(os.path.basename(db_path))[0]
+    backup_dir = os.path.abspath(f"{db_stem}-backup")
 
     if not os.path.exists(backup_dir):
         try:
@@ -1296,7 +1320,7 @@ def main():
         trade_condition_ids = create_trade_conditions(conn)
         logging.info("Trade conditions verified/created.")
 
-        process_tradeplan(conn, data, trade_condition_ids)
+        process_tradeplan(conn, data, trade_condition_ids, qty_cli_override=args.qty)
 
         conn.commit() 
         # VERBOSE OUTPUT: TradeTemplates and Schedules updated successfully
