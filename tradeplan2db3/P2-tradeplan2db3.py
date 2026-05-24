@@ -34,10 +34,18 @@ constants matching the WORKING template that TAT accepts:
     inactive leg → 0.45 (_LONG_MAX_PREMIUM_PLACEHOLDER)
 """
 
-__version__ = "1.1.0-p2"
+__version__ = "1.1.1-p2"
 __updated__ = "2026-05-24"
 __build__   = "SPECIAL — P2 regime-filter (multi_day_return) skip-day build"
 __changelog__ = """
+1.1.1-p2 — 2026-05-24  (skip-marker plan-name embedding)
+  - Now recognises a SKIP-marker row inside the CSV (header + 1 row with
+    "SKIP" in Hour:Minute, plan name in Plan column). The upstream engine
+    emits this on regime-skip days so the plan name survives any filename
+    change on the TAT side (which often renames the file to the INI's
+    generic `tradeplan.csv` default and would otherwise lose the hint).
+  - Truly-empty-CSV path (filename fallback) kept as legacy safety net.
+
 1.1.0-p2 — 2026-05-24  (SPECIAL BUILD for P2 multi_day_return strategy)
   - SKIP DAY support: an empty CSV no longer aborts the run. Plan name is
     derived from the `--plan` CLI flag or the `tradeplan-<NAME>.csv` filename
@@ -803,11 +811,13 @@ def main() -> None:
     except RuntimeError as exc:
         sys.exit(f"ERROR: {exc}\nAborting to protect the live database.")
 
-    # Read CSV. EmptyDataError = totally empty file (zero bytes, no header) =
-    # legitimate skip-day signal from the upstream tradeplan engine: regime
-    # filter (multi_day_return / prior_day_return / etc.) blocked every entry
-    # for the target market date. The right response is to delete any
-    # existing schedules for the plan so TAT fires nothing today.
+    # Read CSV. Two flavours of "skip day" can land here:
+    #   1. SKIP-marker CSV (preferred): header + 1 row with "SKIP" in the
+    #      Hour:Minute cell and the plan name in the Plan column. Survives
+    #      any filename change on the TAT side (which often renames the
+    #      uploaded file to the INI's generic `tradeplan.csv` default).
+    #   2. Truly empty CSV (legacy): 0 bytes, no header. Plan name has to be
+    #      derived from `--plan` or the `tradeplan-<NAME>.csv` filename.
     try:
         df = pd.read_csv(csv_path)
         df.columns = df.columns.str.strip().str.replace('"', "", regex=False)
@@ -816,10 +826,38 @@ def main() -> None:
     except (OSError, pd.errors.ParserError) as exc:
         sys.exit(f"ERROR reading CSV: {exc}")
 
+    # Flavour 1 — SKIP marker row inside a non-empty CSV.
+    if not df.empty and len(df) == 1 and "Hour:Minute" in df.columns:
+        first_cell = str(df.iloc[0]["Hour:Minute"]).strip().upper()
+        if first_cell == "SKIP":
+            plan_name = str(df.iloc[0].get("Plan", "")).strip() or args.plan
+            if not plan_name:
+                sys.exit(
+                    "ERROR: SKIP marker row missing Plan column — cannot "
+                    "determine which schedules to deactivate. Pass --plan."
+                )
+            logging.info(
+                "SKIP marker row in %s — treating as SKIP DAY for plan '%s'.",
+                csv_path, plan_name,
+            )
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    deleted = deactivate_plan(cursor, plan_name)
+                    conn.commit()
+                    logging.info(
+                        "SKIP DAY committed: %d schedules deleted for plan '%s'. "
+                        "TAT will fire nothing for this plan today.",
+                        deleted, plan_name,
+                    )
+                except sqlite3.Error as exc:
+                    conn.rollback()
+                    logging.error("Database error during skip-day deactivation: %s", exc)
+                    sys.exit(f"Database error: {exc}")
+            return
+
+    # Flavour 2 — truly empty CSV (legacy fallback).
     if df.empty:
-        # Skip-day branch — derive plan name from filename or CLI override,
-        # delete its existing schedules, commit, exit clean (0). The next
-        # cron run will repopulate normally if the regime filter passes.
         try:
             plan_name = derive_plan_name_from_csv_path(csv_path, args.plan)
         except ValueError as exc:
