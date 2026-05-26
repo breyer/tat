@@ -700,7 +700,7 @@ def create_schedules(
         "Account": plan.account_number,
         "QtyType": "FixedQty",
         "QtyOverride": 1,
-        "ExpirationMinutes": 5,
+        "ExpirationMinutes": 1,
         "IsActive": 1,
         "DayMonday": 1, "DayTuesday": 1, "DayWednesday": 1,
         "DayThursday": 1, "DayFriday": 1,
