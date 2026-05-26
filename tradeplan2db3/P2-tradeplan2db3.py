@@ -21,17 +21,16 @@ Key features:
 - Strategy lookup is data-driven; unknown strategies are a hard stop.
 
 CSV column → DB field mapping:
-    Premium     → TargetMaxCall (CALL) / TargetMax (PUT)
-    Spread      → LongMaxWidth + LongMaxWidthCall + LongWidth + LongWidthCall
+    Premium     → TargetMaxCall (CALL) / TargetMax + TargetMaxCall (PUT)
+    Spread      → LongWidthCall + LongMaxWidthCall (both sides) + LongMaxWidth (PUT only)
     Stop        → StopMultiple (strip 'x' suffix)
     Strategy    → EMA condition pair (see STRATEGY_MAP)
     profittarget→ (reserved; not yet wired)
     tsl{N}_*    → (ignored; per-plan TSL writes were removed 2026-05-10)
 
-Long-leg cap (LongMaxPremium / LongMaxPremiumCall) uses hardcoded module
-constants matching the WORKING template that TAT accepts:
-    active leg   → 1.0  (_LONG_MAX_PREMIUM_ACTIVE)
-    inactive leg → 0.45 (_LONG_MAX_PREMIUM_PLACEHOLDER)
+Long-leg cap (LongMaxPremium / LongMaxPremiumCall) pattern per reference exports:
+    CALL: active Call → 1.0, inactive Put → null
+    PUT:  both sides  → 1.0
 """
 
 __version__ = "1.1.1-p2"
@@ -169,16 +168,14 @@ STRATEGY_MAP: dict[str, tuple[str, str]] = {
 
 # ── TAT field-value constants ─────────────────────────────────────────────────
 # Single source of truth for stringly-typed TAT enums.
-# 2026-05-10: WORKING template (Export-Template-05102026-1033.tat) shows TAT
-# rejects the pattern from the misleading 0515.tat exports. WORKING uses an
-# active/inactive asymmetric pattern, with hardcoded LongMaxPremium values
-# (1.0 active cap, 0.45 placeholder for inactive side).
-_PREF_HIGHEST                 = "Highest Premium/Delta"
-_LONG_TYPE_MAX_PREMIUM        = "Max Premium"
-_LONG_TYPE_WIDTH              = "Width"
-_LONG_MAX_WIDTH               = 100.0  # static fallback default
-_LONG_MAX_PREMIUM_ACTIVE      = 1.0    # active-side per-leg cap
-_LONG_MAX_PREMIUM_PLACEHOLDER = 0.45   # inactive-side placeholder; TAT requires non-null
+# 2026-05-26: Corrected against manually-verified TAT reference exports
+# (*-correct.tat). CALL inactive side uses null (not a placeholder value).
+# PUT mirrors both sides to Max Premium with cap 1.0.
+_PREF_HIGHEST            = "Highest Premium/Delta"
+_LONG_TYPE_MAX_PREMIUM   = "Max Premium"
+_LONG_TYPE_WIDTH         = "Width"
+_LONG_MAX_WIDTH          = 100.0  # static fallback default
+_LONG_MAX_PREMIUM_ACTIVE = 1.0    # per-leg cap (both sides on PUT, Call-side on CALL)
 
 # ── Base trade templates ───────────────────────────────────────────────────────
 # Defaults aligned with TAT 4.4.81 reference exports
@@ -201,12 +198,12 @@ _TEMPLATE_COMMON: dict = {
     # inactive=Put stays Width. PUT template flips this in TEMPLATE_BASE_PUT.
     "LongType": _LONG_TYPE_WIDTH,
     "LongTypeCall": _LONG_TYPE_MAX_PREMIUM,
-    # LongWidth/LongWidthCall are CSV-Spread-derived per template at sync
-    # time; defaults here are placeholders only.
-    "LongWidth": "100",
+    # LongWidth/LongWidthCall are CSV-Spread-derived at sync time.
+    # TAT reference: LongWidth is always empty; LongWidthCall carries the spread.
+    "LongWidth": "",
     "LongWidthCall": "100",
-    "LongMaxPremium": _LONG_MAX_PREMIUM_PLACEHOLDER,
-    "LongMaxPremiumCall": _LONG_MAX_PREMIUM_PLACEHOLDER,
+    "LongMaxPremium": None,
+    "LongMaxPremiumCall": None,
     "LongMaxWidth": _LONG_MAX_WIDTH,
     "LongMaxWidthCall": _LONG_MAX_WIDTH,
     "LongMinPremium": None,
@@ -250,21 +247,19 @@ _TEMPLATE_COMMON: dict = {
     "ProfitTarget4TradePct": 100.0,
     "ProfitTargetExpirationHour": 0,
     "ProfitTargetExpirationMinute": 0,
-    # Adjustment / TSL slots — defaults match WORKING template (Change/Offset
-    # are 0.0 not null; null was rejected by TAT). Per-plan TSL overrides
-    # removed 2026-05-10; CSV tsl* columns ignored. To re-enable, restore the
-    # deleted update_tsl_values() helper from git history.
+    # Adjustment / TSL slots — TAT reference exports use null for Change/Offset
+    # when AdjustmentType is "None". Per-plan TSL overrides removed 2026-05-10.
     "Adjustment1Type": "None",  "Adjustment1": None,
-    "Adjustment1ChangeType": "Stop Multiple", "Adjustment1Change": 0.0,
-    "Adjustment1ChangeOffset": 0.0, "Adjustment1Hour": 0, "Adjustment1Minute": 0,
+    "Adjustment1ChangeType": "Stop Multiple", "Adjustment1Change": None,
+    "Adjustment1ChangeOffset": None, "Adjustment1Hour": 0, "Adjustment1Minute": 0,
     "Adjustment1OrderType": "Same",
     "Adjustment2Type": "None",  "Adjustment2": None,
-    "Adjustment2ChangeType": "Stop Multiple", "Adjustment2Change": 0.0,
-    "Adjustment2ChangeOffset": 0.0, "Adjustment2Hour": 0, "Adjustment2Minute": 0,
+    "Adjustment2ChangeType": "Stop Multiple", "Adjustment2Change": None,
+    "Adjustment2ChangeOffset": None, "Adjustment2Hour": 0, "Adjustment2Minute": 0,
     "Adjustment2OrderType": "Same",
     "Adjustment3Type": "None",  "Adjustment3": None,
-    "Adjustment3ChangeType": "Stop Multiple", "Adjustment3Change": 0.0,
-    "Adjustment3ChangeOffset": 0.0, "Adjustment3Hour": 0, "Adjustment3Minute": 0,
+    "Adjustment3ChangeType": "Stop Multiple", "Adjustment3Change": None,
+    "Adjustment3ChangeOffset": None, "Adjustment3Hour": 0, "Adjustment3Minute": 0,
     "Adjustment3OrderType": "Same",
     # Exit / hours
     "ExitHour": 0,
@@ -274,14 +269,10 @@ _TEMPLATE_COMMON: dict = {
     "ExitOrderLimit": 0,
     "ExitConditionID": 0,
     "ExtendedHourStop": 0,
-    "ExtendedHourPT": 0,
+    "ExtendedHourPT": 1,
     "LowerTarget": 0,
-    # 2026-04-20: PreferenceCall=NULL on CALL was the original fix when trade
-    # execution broke. 2026-05-10 (revised): WORKING template confirms NULL
-    # on CALL is required (the 0515.tat exports were misleading). Default
-    # PreferenceCall to None; PUT-side SQL overrides to _PREF_HIGHEST.
     "Preference": _PREF_HIGHEST,
-    "PreferenceCall": None,
+    "PreferenceCall": _PREF_HIGHEST,
     # Re-entry
     "ReEnterClose": 0,
     "ReEnterStop": 0,
@@ -320,7 +311,7 @@ _TEMPLATE_COMMON: dict = {
     # Misc
     "MinEntrySLRatio": 0.0,
     "MaxEntrySLRatio": 0.0,
-    "UpgradeFlag": 5.0,
+    "UpgradeFlag": 0.0,
     "ForceCloseAllLegs": 0,
     "IsDebit": 0,
 }
@@ -346,10 +337,8 @@ TEMPLATE_BASE_CALL: dict = {
 TEMPLATE_BASE_PUT: dict = {
     **_TEMPLATE_COMMON,
     "TradeType": "PutSpread",
-    # PUT short-strike Target Maximum lives on TargetMax (not TargetMaxCall).
-    # CSV-driven sync writes TargetMax on PUT, TargetMaxCall on CALL.
     "TargetMax": 5.0,
-    "TargetMaxCall": 0.0,
+    "TargetMaxCall": 5.0,
 }
 
 
@@ -557,18 +546,23 @@ def update_template_values(
     Writes per-plan CSV values onto the CALL and PUT templates.
 
     CSV → DB mapping:
-        Premium ("5.0")   → TargetMaxCall (CALL) / TargetMax (PUT)
-        Spread  ("100")   → LongMaxWidth + LongMaxWidthCall + LongWidth + LongWidthCall
+        Premium ("5.0")   → TargetMaxCall (CALL) / TargetMax+TargetMaxCall (PUT)
+        Spread  ("100")   → LongWidthCall, LongMaxWidth (PUT), LongMaxWidthCall
         Stop    ("1.75x") → StopMultiple
 
-    WORKING-template asymmetry (verified 2026-05-10 against TAT-accepted output):
-        CALL (active=Call): LongTypeCall='Max Premium', LongType='Width',
-                            LongMaxPremiumCall=1.0,    LongMaxPremium=0.45,
-                            Preference='Highest Premium/Delta',
-                            PreferenceCall=NULL  ← required, do not change
-        PUT  (active=Put):  LongType='Max Premium',    LongTypeCall='Width',
-                            LongMaxPremium=1.0,        LongMaxPremiumCall=0.45,
-                            Preference=PreferenceCall='Highest Premium/Delta'
+    Template pattern (verified 2026-05-26 against manually-created TAT exports):
+        CALL: active=Call side has values; inactive=Put side nulled/empty.
+              LongTypeCall='Max Premium', LongType='Width',
+              LongMaxPremiumCall=1.0, LongMaxPremium=null,
+              LongMaxWidthCall=spread, LongMaxWidth=null,
+              LongWidth='', LongWidthCall=spread_str,
+              Preference=PreferenceCall='Highest Premium/Delta'
+        PUT:  both sides 'Max Premium' with cap 1.0; both TargetMax fields set.
+              LongType=LongTypeCall='Max Premium',
+              LongMaxPremium=LongMaxPremiumCall=1.0,
+              LongMaxWidth=LongMaxWidthCall=spread,
+              LongWidth='', LongWidthCall=spread_str,
+              Preference=PreferenceCall='Highest Premium/Delta'
 
     Raises ValueError on parse failure so the caller can abort before commit.
     """
@@ -593,17 +587,13 @@ def update_template_values(
         target_max, spread, stop_loss,
     )
 
-    # 2026-04-20 history: PreferenceCall=NULL on the CALL template is required
-    # by TAT — setting it to _PREF_HIGHEST kills trade execution. The 0515.tat
-    # exports that suggested otherwise were misleading; the WORKING template
-    # confirms NULL on CALL.
     shared: dict = {
         "StopMultiple":     stop_loss,
-        "LongWidth":        width_str,
+        "LongWidth":        "",
         "LongWidthCall":    width_str,
-        "LongMaxWidth":     spread,
         "LongMaxWidthCall": spread,
         "Preference":       _PREF_HIGHEST,
+        "PreferenceCall":   _PREF_HIGHEST,
     }
     call_sets: dict = {
         **shared,
@@ -611,19 +601,19 @@ def update_template_values(
         "TargetMax":          0.0,
         "LongType":           _LONG_TYPE_WIDTH,
         "LongTypeCall":       _LONG_TYPE_MAX_PREMIUM,
-        "LongMaxPremium":     _LONG_MAX_PREMIUM_PLACEHOLDER,  # inactive Put
-        "LongMaxPremiumCall": _LONG_MAX_PREMIUM_ACTIVE,        # active Call
-        "PreferenceCall":     None,                             # 2026-04-20 fix
+        "LongMaxPremium":     None,
+        "LongMaxPremiumCall": _LONG_MAX_PREMIUM_ACTIVE,
+        "LongMaxWidth":       None,
     }
     put_sets: dict = {
         **shared,
         "TargetMax":          target_max,
-        "TargetMaxCall":      0.0,
-        "LongType":           _LONG_TYPE_MAX_PREMIUM,           # active Put
-        "LongTypeCall":       _LONG_TYPE_WIDTH,                 # inactive Call
-        "LongMaxPremium":     _LONG_MAX_PREMIUM_ACTIVE,         # active Put
-        "LongMaxPremiumCall": _LONG_MAX_PREMIUM_PLACEHOLDER,    # inactive Call
-        "PreferenceCall":     _PREF_HIGHEST,
+        "TargetMaxCall":      target_max,
+        "LongType":           _LONG_TYPE_MAX_PREMIUM,
+        "LongTypeCall":       _LONG_TYPE_MAX_PREMIUM,
+        "LongMaxPremium":     _LONG_MAX_PREMIUM_ACTIVE,
+        "LongMaxPremiumCall": _LONG_MAX_PREMIUM_ACTIVE,
+        "LongMaxWidth":       spread,
     }
 
     for tmpl_name, sets in ((call_name, call_sets), (put_name, put_sets)):
